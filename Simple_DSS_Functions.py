@@ -41,10 +41,18 @@ def add_DSS_Data(currentAlt, dssFile, timewindow, input_data, output_path):
     return 0
 
 def resample_dss_ts(inputDSSFile, inputRec, timewindow, outputDSSFile, newPeriod):
-    '''Can upsample an even period DSS timeseries, e.g. go from 1DAY -> 1HOUR'''
+    '''Can upsample an even period DSS timeseries, e.g. go from 1DAY -> 1HOUR, or downsample.  However, hecmath likes to
+    clip of days that don't have the complete 24 hour cycle.  So, we pad here, but there is a chance we ask for data not
+    available. The read gives garbage data and doens't complain.  
+    TODO: fiugre out how to check for bounds for non-midnight start and end times.
+    '''
     dssFm = HecDss.open(inputDSSFile)
     starttime_str = timewindow.getStartTimeString()
     endtime_str = timewindow.getEndTimeString()
+    #if newPeriod.lower() == '1day':  # some computes don't end on 2400, causes problems when last day doesn't get produced in this func
+    starttime_str = starttime_str[:-4] + '0000'
+    endtime_str = endtime_str[:-4] + '2400' # clipped days don't work in computes ... hope the downloaded DMS data is long enough to do this.
+    print('Resampling',newPeriod, inputRec,starttime_str,endtime_str)
     tsm = dssFm.read(inputRec, starttime_str, endtime_str, False)
     tsm_new = tsm.transformTimeSeries(newPeriod,"","AVE")
     dssFm.close()

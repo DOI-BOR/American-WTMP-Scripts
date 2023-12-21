@@ -33,15 +33,15 @@ def computeAlternative(currentAlternative, computeOptions):
     shared_dir = os.path.join(project_dir, 'shared')
 
     DMS_hydro_dss_file = os.path.join(shared_dir, "DMS_AmericanHydroTS.dss")
-    output_dss_file = os.path.join(shared_dir,'DMS_American_ResSim_Pre-Process.dss')
+    output_dss_file = os.path.join(shared_dir,'DMS_American_Pre-Process.dss')
     fallback_dss_file = os.path.join(shared_dir,'WTMP_American_Historical.dss')
 
-    sdf.resample_dss_ts(DMS_hydro_dss_file,'/MR Am.-Folsom Lake/NF American River-Flow/Flow//1Day/250.400.125.1.1/',rtw,output_dss_file,'1HOUR')
-    sdf.resample_dss_ts(DMS_hydro_dss_file,'/MR Am.-Folsom Lake/SF American River-Flow/Flow//1Day/250.402.125.1.1/',rtw,output_dss_file,'1HOUR')
+    sdf.resample_dss_ts(DMS_hydro_dss_file,'/MR Am.-Folsom Lake/11444500 Placerville-Daily Flow/Flow//1Day/250.201.125.1.1/',rtw,output_dss_file,'1HOUR')
     sdf.resample_dss_ts(output_dss_file,'/MR Am.-Folsom Lake/MormonR_NewcastlePP_Sum/Flow//1Day/ResSim_PreProcess/',rtw,output_dss_file,'1HOUR')
+    sdf.resample_dss_ts(output_dss_file,'/MR Am.-Folsom Lake/North Arm/Flow//1Day/ResSim_PreProcess/',rtw,output_dss_file,'1HOUR')
 
-    inflow_records = ['::'.join([output_dss_file,'/MR Am.-Folsom Lake/NF American River-Flow/Flow//1Hour/250.400.125.1.1/']),
-                      '::'.join([output_dss_file,'/MR Am.-Folsom Lake/SF American River-Flow/Flow//1Hour/250.402.125.1.1/']),
+    inflow_records = ['::'.join([output_dss_file,'/MR Am.-Folsom Lake/North Arm/Flow//1Hour/ResSim_PreProcess/']),
+                      '::'.join([output_dss_file,'/MR Am.-Folsom Lake/11444500 Placerville-Daily Flow/Flow//1Houray/250.201.125.1.1/']),
                       '::'.join([output_dss_file,'/MR Am.-Folsom Lake/MormonR_NewcastlePP_Sum/Flow//1Hour/ResSim_PreProcess/']),]
 
     outflow_records = ['/MR Am.-Folsom Lake/FOL-Generation Release U1/Flow//1Hour/250.3.125.4.1/',

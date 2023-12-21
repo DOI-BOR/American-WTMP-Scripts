@@ -15,7 +15,8 @@ def organizeLocations(currentAlternative, locations):
         sys.exit(1)
     for li, location in enumerate(locations):
         tspath =str(currentAlternative.loadTimeSeries(location))
-        tspath = fixInputLocationFpart(currentAlternative, tspath)
+        print('input tspath',tspath)
+        #tspath = fixInputLocationFpart(currentAlternative, tspath)
         if li % 2 == 0: 
             current_pair = [tspath]
         else:
