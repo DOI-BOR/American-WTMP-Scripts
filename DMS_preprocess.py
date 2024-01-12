@@ -27,96 +27,98 @@ reload(DSS_Tools)
 import Simple_DSS_Functions as sdf
 reload(sdf)
 
-units_need_fixing = ['tenths','m/s','deg','kph','fract'] #'radians',]
+units_need_fixing = ['tenths','deg','kph','fract'] #'radians',]
 
 def fix_DMS_types_units(dss_file):
     '''This method was implemented to change data types to PER-AVER that are not coming from the DMS that way'''
     dss = HecDss.open(dss_file)
     recs = dss.getPathnameList()
     for r in recs:
-        tsm = dss.read(r)
         rlow = r.lower()
-        if "/flow" in rlow or "/1day/" in rlow:
-            if not "/elev" in rlow:
+        if not '/location info' in rlow and not '/temp-equil' in rlow:
+        
+            tsm = dss.read(r)
+
+            if "/flow" in rlow or "/1day/" in rlow:
                 tsm.setType('PER-AVER')
                 dss.write(tsm)
-        
-        if tsm.getUnits().lower() in units_need_fixing:
-            if tsm.getUnits() == 'tenths':
-                # save off a copy of cloud record in 0-1 for ResSim
-                tsc = tsm.getData()
-                rec_parts = tsc.fullName.split('/')
-                rec_parts[3] += '-FRAC'
-                tsc.fullName = '/'.join(rec_parts)
-                tsc.units = 'FRAC'
-                for i in range(len(tsc.values)) :
-                    tsc.values[i] = tsc.values[i] / 10.0                
-                dss.write(tsc)
-            if tsm.getUnits().lower() == 'fract':
-                # save off a copy of cloud record in 0-1 for ResSim, with proper naming, reset orignial to tenths
-                tsc = tsm.getData()
-                original_fullName = tsc.fullName
-                rec_parts = tsc.fullName.split('/')
-                rec_parts[3] += '-FRAC'
-                tsc.fullName = '/'.join(rec_parts)
-                tsc.units = 'FRAC'
-                dss.write(tsc)
+            
+            if tsm.getUnits() in units_need_fixing:
+                if tsm.getUnits() == 'tenths':
+                    # save off a copy of cloud record in 0-1 for ResSim
+                    tsc = tsm.getData()
+                    rec_parts = tsc.fullName.split('/')
+                    rec_parts[3] += '-FRAC'
+                    tsc.fullName = '/'.join(rec_parts)
+                    tsc.units = 'FRAC'
+                    for i in range(len(tsc.values)) :
+                        tsc.values[i] = tsc.values[i] / 10.0                
+                    dss.write(tsc)
+                if tsm.getUnits() == 'radians':
+                    # save off a copy in deg
+                    tsc = tsm.getData()
+                    rec_parts = tsc.fullName.split('/')
+                    rec_parts[3] += '-DEG'
+                    tsc.fullName = '/'.join(rec_parts)
+                    tsc.units = 'deg'
+                    for i in range(len(tsc.values)) :
+                        tsc.values[i] = tsc.values[i] / (2*3.141592653589793) * 360.0                
+                    dss.write(tsc)
+                if tsm.getUnits().lower() == 'fract':
+                    # save off a copy of cloud record in 0-1 for ResSim, with proper naming, reset orignial to tenths
+                    tsc = tsm.getData()
+                    original_fullName = tsc.fullName
+                    rec_parts = tsc.fullName.split('/')
+                    rec_parts[3] += '-FRAC'
+                    tsc.fullName = '/'.join(rec_parts)
+                    tsc.units = 'FRAC'
+                    dss.write(tsc)
                 
-                for i in range(len(tsc.values)) :
-                    tsc.values[i] = tsc.values[i] * 10.0
-                tsc.units = 'tenths'
-                tsc.fullName = original_fullName
-                dss.write(tsc)
+                    for i in range(len(tsc.values)) :
+                        tsc.values[i] = tsc.values[i] * 10.0
+                    tsc.units = 'tenths'
+                    tsc.fullName = original_fullName
+                    dss.write(tsc)
 
-            if tsm.getUnits() == 'radians':
-                # save off a copy in deg
-                tsc = tsm.getData()
-                rec_parts = tsc.fullName.split('/')
-                rec_parts[3] += '-DEG'
-                tsc.fullName = '/'.join(rec_parts)
-                tsc.units = 'deg'
-                for i in range(len(tsc.values)) :
-                    tsc.values[i] = tsc.values[i] / (2*3.141592653589793) * 360.0                
-                dss.write(tsc)
-            if tsm.getUnits() == 'deg':
-                # save off a copy in redians
-                tsc = tsm.getData()
-                rec_parts = tsc.fullName.split('/')
-                rec_parts[3] += '-RADIANS'
-                tsc.fullName = '/'.join(rec_parts)
-                tsc.units = 'radians'
-                for i in range(len(tsc.values)) :
-                    tsc.values[i] = tsc.values[i] / 360.0 * (2*3.141592653589793)                
-                dss.write(tsc)
-            if tsm.getUnits() == 'kph':
-                # convert to m/s 
-                tsc = tsm.getData()
-                tsc.units = 'm/s'
-                for i in range(len(tsc.values)) :
-                    tsc.values[i] = tsc.values[i] / 3.6
-                dss.write(tsc)
-
-                # also, add w2link
-                rec_parts = tsc.fullName.split('/')
-                if not "w2link" in rec_parts[3].lower():
-                    rec_parts[3] += '-W2link'
+                if tsm.getUnits() == 'deg':
+                    # save off a copy in redians
+                    tsc = tsm.getData()
+                    rec_parts = tsc.fullName.split('/')
+                    rec_parts[3] += '-RADIANS'
                     tsc.fullName = '/'.join(rec_parts)
+                    tsc.units = 'radians'
+                    for i in range(len(tsc.values)) :
+                        tsc.values[i] = tsc.values[i] / 360.0 * (2*3.141592653589793)                
+                    dss.write(tsc)
+                if tsm.getUnits() == 'kph':
+                    # convert to m/s 
+                    tsc = tsm.getData()
+                    tsc.units = 'm/s'
                     for i in range(len(tsc.values)) :
                         tsc.values[i] = tsc.values[i] / 3.6
                     dss.write(tsc)
-                    
-            if tsm.getUnits() == 'm/s':
-                # make a copy divied by kph conversion as a hack to get W2 linking the wind speed correctly 
-                tsc = tsm.getData()
-                rec_parts = tsc.fullName.split('/')
-                if not "w2link" in rec_parts[3].lower():
-                    rec_parts[3] += '-W2link'
-                    tsc.fullName = '/'.join(rec_parts)
-                    for i in range(len(tsc.values)) :
-                        tsc.values[i] = tsc.values[i] / 3.6
-                    dss.write(tsc)
-                    
+
+                    # also, add w2link
+                    #rec_parts = tsc.fullName.split('/')
+                    #if not "w2link" in rec_parts[3].lower():
+                    #    rec_parts[3] += '-W2link'
+                    #    tsc.fullName = '/'.join(rec_parts)
+                    #    for i in range(len(tsc.values)) :
+                    #        tsc.values[i] = tsc.values[i] / 3.6
+                    #    dss.write(tsc)
+
+                if tsm.getUnits() == 'm/s':
+                    # make a copy divied by kph conversion as a hack to get W2 linking the wind speed correctly 
+                    tsc = tsm.getData()
+                    rec_parts = tsc.fullName.split('/')
+                    if not "w2link" in rec_parts[3].lower():
+                        rec_parts[3] += '-W2link'
+                        tsc.fullName = '/'.join(rec_parts)
+                        for i in range(len(tsc.values)) :
+                            tsc.values[i] = tsc.values[i] / 3.6
+                        dss.write(tsc)
     dss.close()
+
 
 def DMS_fix_units_types(hydro_dss,met_dss_file):
     fix_DMS_types_units(hydro_dss)
