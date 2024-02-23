@@ -1,6 +1,6 @@
 '''
 Created on 8/7/2023
-@author: Scott Burdick-Yahya
+@author: Scott Burdick-Yahya, Ben Saenz
 @organization: Resource Management Associates
 @contact: scott@rmanet.com
 @note:
@@ -50,7 +50,7 @@ def computeAlternative(currentAlternative, computeOptions):
                        '/MR Am.-Folsom Lake/FOL-Pumping Plant Release/Flow//1Hour/250.3.125.3.1/',
                        '/MR Am.-Folsom Lake/FOL-Spill Release/Flow//1Hour/250.3.125.7.1/',
                        '::'.join([output_dss_file,'/MR Am.-Folsom Lake/Upper_River_Outlets_Sum_min4/Flow//1Hour/ResSim_PreProcess/']),
-                       '::'.join([output_dss_file,'/MR Am.-Folsom Lake/Upper_River_Outlets_Sum_min4/Flow//1Hour/ResSim_PreProcess/']),
+                       '::'.join([output_dss_file,'/MR Am.-Folsom Lake/Lower_River_Outlets_Sum_min4/Flow//1Hour/ResSim_PreProcess/']),
                        '::'.join([os.path.join(shared_dir,'Folsom_balance_6.dss'),'//EID/FLOW/*/1HOUR/USGS-CARDNO-MERGED/']),]
 
     stage_record = '/MR Am.-Folsom Lake/FOL-Elevation/Elev//1Hour/250.3.145.1.1/'
@@ -88,7 +88,7 @@ def computeAlternative(currentAlternative, computeOptions):
                        '/MR Am.-Folsom Lake/FOL-Generation Release U3/Flow//1Hour/250.3.125.6.1/',
                        '/MR Am.-Folsom Lake/FOL-Spill Release/Flow//1Hour/250.3.125.7.1/',
                        '::'.join([output_dss_file,'/MR Am.-Folsom Lake/Upper_River_Outlets_Sum_min4/Flow//1Hour/ResSim_PreProcess/']),
-                       '::'.join([output_dss_file,'/MR Am.-Folsom Lake/Upper_River_Outlets_Sum_min4/Flow//1Hour/ResSim_PreProcess/']),]
+                       '::'.join([output_dss_file,'/MR Am.-Folsom Lake/Lower_River_Outlets_Sum_min4/Flow//1Hour/ResSim_PreProcess/']),]
 
     outflow_records = ['/MR Am.-Natoma Lake/NAT-Fish Hatchery Flow/Flow//1Hour/251.4.125.26.1/',
                        '::'.join([output_dss_file,'/MR Am.-Natoma Lake/NAT-Gen Release Sum/Flow//1Hour/ResSim_PreProcess/']),

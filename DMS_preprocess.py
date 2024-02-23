@@ -31,11 +31,107 @@ units_need_fixing = ['tenths','deg','kph','fract'] #'radians',]
 
 def fix_DMS_types_units(dss_file):
     '''This method was implemented to change data types to PER-AVER that are not coming from the DMS that way'''
+    recs = DSS_Tools.get_sanitized_record_list(dss_file)
+
     dss = HecDss.open(dss_file)
-    recs = dss.getPathnameList()
+    
     for r in recs:
         rlow = r.lower()
-        if not '/location info' in rlow and not '/temp-equil' in rlow:
+        # things not to read: paired data, integer/scalar/text vars and some
+        # other things that are causing trouble.
+        if not '/location info' in rlow and not '/temp-equil' in rlow and \
+          not '/depth-temp' in rlow and not 'icpathsmap' in rlow and \
+          not '/downstream_control_loc' in rlow and not 'temp-water-target' in rlow:
+        
+            tsc = dss.get(r,True)
+
+            if "/flow" in rlow or "/1day/" in rlow:
+                tsc.type = 'PER-AVER'
+                #tsc.setStoreAsDoubles(True)
+                print('FixDMS Write original name: ',rlow)
+                print('FixDMS Write output name: ',tsc.fullName)
+                dss.write(tsc)
+
+            units = str(tsc.units).lower()  # just to make sure
+            
+            if units in units_need_fixing:
+                if units == 'tenths':
+                    # save off a copy of cloud record in 0-1 for ResSim
+                    rec_parts = tsc.fullName.split('/')
+                    rec_parts[3] += '-FRAC'
+                    tsc.fullName = '/'.join(rec_parts)
+                    tsc.units = 'FRAC'
+                    for i in range(len(tsc.values)) :
+                        tsc.values[i] = tsc.values[i] / 10.0
+                    #tsc.setStoreAsDoubles(True)         
+                    print('FixDMS Write original name: ',rlow)
+                    print('FixDMS Write output name: ',tsc.fullName)
+                    dss.write(tsc)
+                if units == 'radians':
+                    # save off a copy in deg
+                    rec_parts = tsc.fullName.split('/')
+                    rec_parts[3] += '-DEG'
+                    tsc.fullName = '/'.join(rec_parts)
+                    tsc.units = 'deg'
+                    for i in range(len(tsc.values)) :
+                        tsc.values[i] = tsc.values[i] / (2*3.141592653589793) * 360.0
+                    #tsc.setStoreAsDoubles(True)         
+                    print('FixDMS Write original name: ',rlow)
+                    print('FixDMS Write output name: ',tsc.fullName)
+                    dss.write(tsc)
+                if units == 'deg':
+                    # save off a copy in redians
+                    rec_parts = tsc.fullName.split('/')
+                    rec_parts[3] += '-RADIANS'
+                    tsc.fullName = '/'.join(rec_parts)
+                    tsc.units = 'radians'
+                    for i in range(len(tsc.values)) :
+                        tsc.values[i] = tsc.values[i] / 360.0 * (2*3.141592653589793)
+                    #tsc.setStoreAsDoubles(True)            
+                    print('FixDMS Write original name: ',rlow)
+                    print('FixDMS Write output name: ',tsc.fullName)
+                    dss.write(tsc)
+                if units == 'kph':
+                    # convert to m/s 
+                    tsc.units = 'm/s'
+                    for i in range(len(tsc.values)) :
+                        tsc.values[i] = tsc.values[i] / 3.6
+                    #tsc.setStoreAsDoubles(True)
+                    print('FixDMS Write original name: ',rlow)
+                    print('FixDMS Write output name: ',tsc.fullName)
+                    dss.write(tsc)
+                if units == 'fract':
+                    # save off a copy of cloud record in 0-1 for ResSim, with proper naming, reset orignial to tenths
+                    original_fullName = tsc.fullName
+                    rec_parts = tsc.fullName.split('/')
+                    rec_parts[3] += '-FRAC'
+                    tsc.fullName = '/'.join(rec_parts)
+                    tsc.units = 'FRAC'
+                    print('FixDMS Write original name: ',rlow)
+                    print('FixDMS Write output name: ',tsc.fullName)
+                    dss.write(tsc)
+                
+                    for i in range(len(tsc.values)) :
+                        tsc.values[i] = tsc.values[i] * 10.0
+                    tsc.units = 'tenths'
+                    tsc.fullName = original_fullName
+                    print('FixDMS Write original name: ',rlow)
+                    print('FixDMS Write output name: ',tsc.fullName)
+                    dss.write(tsc)
+
+    dss.close()
+
+
+def fix_DMS_types_units_old(dss_file):
+    '''This method was implemented to change data types to PER-AVER that are not coming from the DMS that way'''
+    recs = DSS_Tools.get_sanitized_record_list(dss_file)
+    dss = HecDss.open(dss_file)
+    
+    for r in recs:
+        rlow = r.lower()
+        if not '/location info' in rlow and not '/temp-equil' in rlow and \
+          not '/depth-temp' in rlow and not 'icpathsmap' in rlow and \
+          not '/downstream_control_loc' in rlow:
         
             tsm = dss.read(r)
 
@@ -43,7 +139,7 @@ def fix_DMS_types_units(dss_file):
                 tsm.setType('PER-AVER')
                 dss.write(tsm)
             
-            if tsm.getUnits() in units_need_fixing:
+            if tsm.getUnits().lower() in units_need_fixing:
                 if tsm.getUnits() == 'tenths':
                     # save off a copy of cloud record in 0-1 for ResSim
                     tsc = tsm.getData()
@@ -120,6 +216,41 @@ def fix_DMS_types_units(dss_file):
     dss.close()
 
 
+def standardize_bc_temp_water_to_C(dss_file,output_dss_file):
+    '''Make copies of temp-water records in C (standardizing on C) for ResSim linking'''
+    recs = DSS_Tools.get_sanitized_record_list(dss_file)
+    dss = HecDss.open(dss_file)
+
+    if dss_file == output_dss_file:
+        dss_out = dss
+    else:
+        dss_out = HecDss.open(output_dss_file)
+    
+    for r in recs:
+        rlow = r.lower()
+        if '/temp-water' in rlow:
+
+            tsc = dss.get(r,True)
+
+            incoming_units = tsc.units.lower()
+        
+            tsc = dss.get(r,True)
+            rec_parts = tsc.fullName.split('/')
+            rec_parts[3] += '-C'
+            tsc.fullName = '/'.join(rec_parts)
+            tsc.units = 'C'
+                        
+            if incoming_units == 'f' or incoming_units == 'degf':                
+                for i in range(len(tsc.values)) :
+                    tsc.values[i] = (tsc.values[i] - 32.0)*5.0/9.0             
+
+            dss_out.put(tsc)
+
+    dss.close()
+    if dss_file != output_dss_file:
+        dss_out.close()
+
+
 def DMS_fix_units_types(hydro_dss,met_dss_file):
     fix_DMS_types_units(hydro_dss)
     fix_DMS_types_units(met_dss_file)
@@ -177,7 +308,7 @@ def interp_monthly_coeff(coeffs):
     month_midpoints = [16, 45, 75, 105, 136, 166, 197, 228, 259, 289, 320, 350]    
     month_midpoints_hours = [(month_midpoints[i]-1)*24 for i in range(12)]
     for i in  [1,3,5,7,8,10,12]:
-    	month_midpoints_hours[i-1] += 12
+        month_midpoints_hours[i-1] += 12
     month_midpoints_hours_padded = [-15.5*24.0,] + month_midpoints_hours + [8784.0 + 15.5*24.0,]
     coeffs_padded = [coeffs[-1],] + coeffs + [coeffs[0],]
     hourly_coeff = []
@@ -307,17 +438,17 @@ def calc_folsom_inflow_temps(currentAlt, rtw, hydro_dss, met_dss_file, output_ds
 
     # hardcoded paths ... yuck
     if hourly:
-	    NF = '::'.join([output_dss_file,'/MR Am.-Folsom Lake/NF American River-Flow/Flow//1Hour/250.400.125.1.1/']) # should change to lake clementime for future use
-	    MF = '::'.join([output_dss_file,'/MR Am.-Folsom Lake/MF calc/Flow//1Hour/ResSim_PreProcess/']) # should change to foresthill for use
-	    SF = '::'.join([output_dss_file,'/MR Am.-Folsom Lake/SF American River-Flow/Flow//1Hour/250.402.125.1.1/']) # should change to placerville for use
-	    AT = '::'.join([met_dss_file,'/MR Am.-Natoma Lake/Fair Oaks-Air Temp/Temp-Air//1hour/251.40.53.1.1/'])
-	    output_period = '1Hour'
+        NF = '::'.join([output_dss_file,'/MR Am.-Folsom Lake/NF American River-Flow/Flow//1Hour/250.400.125.1.1/']) # should change to lake clementime for future use
+        MF = '::'.join([output_dss_file,'/MR Am.-Folsom Lake/MF calc/Flow//1Hour/ResSim_PreProcess/']) # should change to foresthill for use
+        SF = '::'.join([output_dss_file,'/MR Am.-Folsom Lake/SF American River-Flow/Flow//1Hour/250.402.125.1.1/']) # should change to placerville for use
+        AT = '::'.join([met_dss_file,'/MR Am.-Natoma Lake/Fair Oaks-Air Temp/Temp-Air//1hour/251.40.53.1.1/'])
+        output_period = '1Hour'
     else:
-	    NF = '::'.join([hydro_dss,'/MR Am.-Folsom Lake/NF American River-Flow/Flow//1Day/250.400.125.1.1/'])
-	    MF = '::'.join([output_dss_file,'/MR Am.-Folsom Lake/MF calc/Flow//1Day/ResSim_PreProcess/'])
-	    SF = '::'.join([hydro_dss,'/MR Am.-Folsom Lake/SF American River-Flow/Flow//1Day/250.402.125.1.1/'])
-	    AT = '::'.join([output_dss_file,'/MR Am.-Natoma Lake/Fair Oaks-Air Temp/Temp-Air//1DAY/251.40.53.1.1/'])
-	    output_period = '1Day'
+        NF = '::'.join([hydro_dss,'/MR Am.-Folsom Lake/NF American River-Flow/Flow//1Day/250.400.125.1.1/'])
+        MF = '::'.join([output_dss_file,'/MR Am.-Folsom Lake/MF calc/Flow//1Day/ResSim_PreProcess/'])
+        SF = '::'.join([hydro_dss,'/MR Am.-Folsom Lake/SF American River-Flow/Flow//1Day/250.402.125.1.1/'])
+        AT = '::'.join([output_dss_file,'/MR Am.-Natoma Lake/Fair Oaks-Air Temp/Temp-Air//1DAY/251.40.53.1.1/'])
+        output_period = '1Day'
 
     # hardcoded paths ... yuck
     shared_path,_ = os.path.split(hydro_dss)
@@ -413,19 +544,26 @@ def compute_folsom_flows(currentAlternative, rtw, hydro_dss, output_dss_file):
     DSS_Tools.add_flows(currentAlternative, rtw, inflow_records, hydro_dss,
               '/MR Am.-Folsom Lake/MormonR_NewcastlePP_Sum/Flow//1Day/ResSim_PreProcess/', output_dss_file)
 
-	# total North Arm Folsom inflow = NF (Lake Clementine) + MF (Foresthill) - ARPS (upsample monthly A. R. Pump stations) 
+    # total North Arm Folsom inflow = NF (Lake Clementine) + MF (Foresthill) - ARPS (upsample monthly A. R. Pump stations) 
+
+    # this mothnly record is a pain in the butt. the resampling always leaves off the start and end because the read typically excludes them,
+    # and the DMS seems to be missing Dec 2021 at this point. so we expand dates but also end Nov 30 in 2021
+    DSS_Tools.resample_dss_ts(hydro_dss,'/MR Am.-Folsom Lake/American River Pump Station (ARPS)-Flow/Flow//1Mon/250.401.125.1.1/',
+                              rtw,output_dss_file,'1Day',pad_1mon=True)
     out_rec = '/MR Am.-Folsom Lake/North Arm/Flow//1Day/ResSim_PreProcess/'
     shared_path,_ = os.path.split(hydro_dss)
     American_inflows_6 = os.path.join(shared_path,'American_inflows_6.dss')
     flow_Records = ['/MR Am.-Folsom Lake/11427000 Lake Clementine Dam-Daily Flow/Flow//1Day/250.112.125.1.1/',
+                    '/MR Am.-Folsom Lake/11433300 Foresthill-Daily Flow/Flow//1Day/250.113.125.1.1/',
                     #'/MR Am.-Folsom Lake-11433300 Foresthill-Daily Flow/Flow//1Day/250.113.125.1.1/',  # this one is not downloading yet
-                    '::'.join([American_inflows_6,'/11433300/MF AMERICAN/FLOW//1DAY/USGS-CARDNO/']),
-                    '::'.join([American_inflows_6,'/FOLSOM/AMERICAN RIVER PUMP STATION/FLOW//1DAY/CDEC-CARDNO/']),] # this one is not downloading yet
+                    #'::'.join([American_inflows_6,'/11433300/MF AMERICAN/FLOW//1DAY/USGS-CARDNO/']),
+                    '::'.join([output_dss_file,'/MR Am.-Folsom Lake/American River Pump Station (ARPS)-Flow/Flow//1Day/250.401.125.1.1/']),]
+                    #'::'.join([American_inflows_6,'/FOLSOM/AMERICAN RIVER PUMP STATION/FLOW//1DAY/CDEC-CARDNO/']),] # this one is not downloading yet
                                                                                      # [N.A.,ADD,SUBTRACT]
     DSS_Tools.add_or_subtract_flows(currentAlternative, rtw, flow_Records, hydro_dss, [None,True,False], out_rec, output_dss_file)
-		
-	# EID outflow - do we need to normalize to daily?
-	# /MR Am.-Folsom Lake-EID Folsom Diversion-Diversion Flow/Flow/ --?
+        
+    # EID outflow - do we need to normalize to daily?
+    # /MR Am.-Folsom Lake-EID Folsom Diversion-Diversion Flow/Flow/ --?
 
     # Sum Folsom Dam river outlets - Upper elevation
     out_rec = '/MR Am.-Folsom Lake/Upper_River_Outlets_Sum_min4/Flow//1Hour/ResSim_PreProcess/'
@@ -495,6 +633,7 @@ def preprocess_ResSim_American(currentAlternative, computeOptions):
     fix_DMS_types_units(hydro_dss)
     met_dss_file = os.path.join(shared_dir,'DMS_AmericanMet.dss')
     fix_DMS_types_units(met_dss_file)
+    standardize_bc_temp_water_to_C(hydro_dss,output_dss_file)
 
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, output_dss_file, constant=0.0, what='flow', 
                         dss_type='PER-AVER', period='1DAY',cpart='ZEROS',fpart='ZEROS')
@@ -523,6 +662,7 @@ def preprocess_ResSim_American(currentAlternative, computeOptions):
     #calc_folsom_inflow_temps(currentAlternative, rtw, hydro_dss, met_dss_file, output_dss_file)   
 
     compute_plotting_records(currentAlternative, rtw, hydro_dss, output_dss_file)
+
 
     return True
 

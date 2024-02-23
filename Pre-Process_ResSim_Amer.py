@@ -27,21 +27,17 @@ def computeAlternative(currentAlternative, computeOptions):
     year = int(startyear_str)
 
     run_dir = computeOptions.getRunDirectory()
-    model_dir = fpp.model_dir_from_run_dir(run_dir,'Folsom','W2 Folsom')
-    targt_temp_npt_filepath = os.path.join(model_dir,'TargetSchedulesA.npt') # overwrite what's there    
+    model_name = 'ResSim'  # base Folsom forecast model
+    if "nobypass" in run_dir.lower():
+        model_name += " NoBypass"  
     shared_dir = os.path.join(fpp.study_dir_from_run_dir(run_dir),'shared')
     forecast_dss = os.path.join(shared_dir,'WTMP_American_forecast.dss')
-    schedule_csv = os.path.join(model_dir,'SchedulesA.csv')
 
     # forecast met data potentially has some weird units
     DMS_preprocess.fix_DMS_types_units(forecast_dss)
 
-	# convert Folsom storage to elevation
-    elev_stor_area = cbfj.read_elev_storage_area_file(os.path.join(shared_dir, 'AMR_scratch_Folsom.csv'), 'Folsom')
-    fpp.storage_to_elev('Folsom',elev_stor_area,forecast_dss,'//FOLSOM/STORAGE//1Month/AMER_BC_SCRIPT/',conic=False)
-
-    # invent Natoma elevation record from folsom storage rec
-    fpp.invent_elevation('Natoma',forecast_dss,'//FOLSOM/STORAGE//1Month/AMER_BC_SCRIPT/',123.0)
+    # predict daily elevation, in case of start on arbitrary day
+    fpp.write_forecast_elevations(currentAlternative, rtw, forecast_dss, shared_dir)
 
     # flow balance: subtract muni/pump flow from total release to get flow through dam
     fpp.subtract_muni_pump(forecast_dss)
@@ -55,7 +51,7 @@ def computeAlternative(currentAlternative, computeOptions):
     # I don't think we need this split out; everything is dynamic including river outlets?
     folsom_outlets = fpp.write_qot_7outlets_flows(forecast_dss, starttime_str, endtime_str)
 
-	# make equilibrium temp for ResSim target temp calcs
+    # make equilibrium temp for ResSim target temp calcs
     currentAlternative.addComputeMessage("Computing equilibrium temperature, this may take a while...")
     # eq_temp(rtw,at,cl,ws,sr,td,eq_temp_out)
     fpp.eq_temp(rtw,
@@ -67,7 +63,7 @@ def computeAlternative(currentAlternative, computeOptions):
             [forecast_dss,"/MR AM.-NATOMA LAKE/FAIR OAKS/Temp-Equil//1Hour/amer_bc_script/"]
            )
 
-	# write an hourly forecast elevation based on starting elevation and flows
+    # write an hourly forecast elevation based on starting elevation and flows
     DSS_Tools.resample_dss_ts(forecast_dss,'//FOLSOM/PUMPING (FP)//1Day/AMER_BC_SCRIPT/',rtw,forecast_dss,'1HOUR')
     DSS_Tools.resample_dss_ts(forecast_dss,'//Folsom-NF-in/FLOW-IN//1Day/AMER_BC_SCRIPT/',rtw,forecast_dss,'1HOUR')
     DSS_Tools.resample_dss_ts(forecast_dss,'//Folsom-SF-in/FLOW-IN//1Day/AMER_BC_SCRIPT/',rtw,forecast_dss,'1HOUR')
@@ -76,13 +72,8 @@ def computeAlternative(currentAlternative, computeOptions):
                       '//Folsom-SF-in/FLOW-IN//1Hour/AMER_BC_SCRIPT/',
                       '/AMERICAN RIVER/FOLSOM LAKE/FLOW-ACC-DEP//1Hour/AMER_BC_SCRIPT/']  # this actually evap, but negative already, so it goes as inflow
     outflow_records = ['//FOLSOM/FLOW-RELEASE//1Hour/AMER_BC_SCRIPT/']
-    starting_elevation = DSS_Tools.first_value(forecast_dss,'//Folsom/ELEV//1Month/AMER_BC_SCRIPT/')
-    print('starting_elevation ',starting_elevation)
-    cbfj.predict_elevation(currentAlternative, rtw, 'Folsom', inflow_records, outflow_records, starting_elevation,
-                         elev_stor_area, forecast_dss, '//Folsom/ELEV-FORECAST//1HOUR/AMER_BC_SCRIPT/', forecast_dss, shared_dir,
-                         use_conic=False, alt_period=None, alt_period_string=None)
-
-	# make constant records for linking
+    
+    # make constant records for linking
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=2.0, what='flow', 
                         dss_type='PER-AVER', period='1DAY',cpart='2cfs',fpart='TinyFlow')
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=2.0, what='flow', 
@@ -93,9 +84,16 @@ def computeAlternative(currentAlternative, computeOptions):
                         dss_type='PER-AVER', period='1DAY',cpart='ZEROS',fpart='ZEROS')
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=0.0, what='flow', 
                         dss_type='PER-AVER', period='1HOUR',cpart='ZEROS',fpart='ZEROS')
-    DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=0.0, what='elev', 
+    print('Trying to make ELEV-INITIAL-GATE')
+    DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=401.0, what='elev', 
                         dss_type='PER-AVER', period='1DAY',cpart='ELEV-INITIAL-GATE',fpart='FULL-HEIGHT')
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=0.0, what='evap', 
                         dss_type='PER-AVER', period='1DAY',cpart='ZEROS',fpart='ZEROS')
+
+
+    # if this is a non-iterative simulation, put the correct ensemble number into the Folsom.in file 
+    if 'nobypass' in model_name.lower():
+        print('Setting: Do not use Folsom River Bypass in forecast')
+        fpp.remove_folsom_lower_river_use(forecast_dss,"/FOLSOM/LOWER RIVER OUTLET USEAGE/COUNT//1Day/AMER_BC_SCRIPT/")
 
     return True

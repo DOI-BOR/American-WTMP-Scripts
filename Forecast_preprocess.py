@@ -9,7 +9,7 @@ from rma.util.RMAConst import MISSING_DOUBLE
 import math
 import sys
 import datetime as dt
-import os, sys, csv
+import os, sys, csv, fileinput
 
 from com.rma.io import DssFileManagerImpl
 from com.rma.model import Project
@@ -91,20 +91,20 @@ def eq_temp(rtw,at,cl,ws,sr,td,eq_temp_out):
     starttime_str = rtw.getStartTimeString()
     endtime_str = rtw.getEndTimeString()
 
-	# get at data and times in the formats needed
+    # get at data and times in the formats needed
     dssFm = HecDss.open(at[0])        
     tsc = dssFm.read(at[1], starttime_str, endtime_str, False).getData()
     tsc_int_times = tsc.times
     dtt = DSS_Tools.hectime_to_datetime(tsc)
     at_data = tsc.values
     dssFm.close()
-	# get the rest of the data over the same period
+    # get the rest of the data over the same period
     cl_data = DSS_Tools.data_from_dss(cl[0],cl[1],starttime_str,endtime_str)
     ws_data = DSS_Tools.data_from_dss(ws[0],ws[1],starttime_str,endtime_str)
     sr_data = DSS_Tools.data_from_dss(sr[0],sr[1],starttime_str,endtime_str)
     td_data = DSS_Tools.data_from_dss(td[0],td[1],starttime_str,endtime_str)
     
-	# calc_equilibrium_temp(dtt, at, cl, sr, td, ws)
+    # calc_equilibrium_temp(dtt, at, cl, sr, td, ws)
     Te = equilibrium_temp.calc_equilibrium_temp(dtt,at_data,cl_data,sr_data,td_data,ws_data)
     
     print('writing: ',eq_temp_out[1])
@@ -148,7 +148,7 @@ def read_temp_schedule_csv(csv_file_path):
 
 def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_temp_npt_filepath,lagWatt=False):
     '''
-    Tair [C] - F, I guess since it's converted?
+    Tair [C] 
     FaveFlow [CMS]
     '''
 
@@ -179,11 +179,15 @@ def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_te
 
     if location==1: # Watt Ave
         coeffs = watt_coeffs
-    elif location==2: # Havel Ave
+    elif location==3: # Havel Ave
         coeffs = hazel_coeffs
-    elif location==3: # RiverMile
-        coeffs = rivermile_coeffs
-        cf4 = interp_monthly_coeff_daily(coeffs[4]) # x4
+    else:
+        raise ValueError("Forecast Preprocess: W2 downstream target not supported:"+str(locations))
+        
+    # TODO: needs work as the form of the regression is different below
+    #elif location==3: # RiverMile
+    #    coeffs = rivermile_coeffs
+    #    cf4 = interp_monthly_coeff_daily(coeffs[4]) # x4
 
     cf0 = interp_monthly_coeff_daily(coeffs[0]) # int(tercpet)
     cf1 = interp_monthly_coeff_daily(coeffs[1]) # x1
@@ -206,7 +210,7 @@ def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_te
         if mon > 4 and mon < 12:          
             lag = 0
             if lagWatt and location==1:
-                lag = int(3966.8*(35.314*FaveFlow[doy])**(-0.944))
+                lag = int(3966.8*(35.314*FaveFlow[i])**(-0.944))
                 lag = max(0,lag)
             dateLag = date + dt.timedelta(days=lag)
             # schedule runs from may -> nov, index for monthy schedule temp, but first value is jday...
@@ -222,18 +226,21 @@ def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_te
                 # FORTRAN: ReleaseTemp(k,i)=(-((TTarg(month(k),i)-32)/1.8)+int(m)+x1(m)*aveTair(k)+x3(m)*log10(FaveFlow(k)))/(-x2(m))
                 # JYTHON:               (-1.0*((sched[mlag]-32.0)/1.8)+cf0[d] + cf1[d]*Tair[ilag] + cf3[d]*math.log10(FaveFlow[ilag]))/(-1.0*cf2[d])
                 rt.append( (-1.0*((float(sched[mlag])-32.0)/1.8)+cf0[d] + cf1[d]*Tair[ilag] + cf3[d]*math.log10(FaveFlow[ilag]))/(-1.0*cf2[d]) )
-				
-            	# TODO: insert RiverMile calc here, if location==3
+                
+                # TODO: insert RiverMile calc here, if location==3
 
-            	# Debug
-                #if k==0:
-                #   print(rt[-1])
-                #   print(float(sched[mlag]),cf0[d],cf1[d],Tair[ilag],cf3[d],FaveFlow[ilag],cf2[d])
-                #   print(mlag,d,ilag)
-            	
+                # Debug
+                if k==0:
+                   print(rt[-1])
+                   print(float(sched[mlag]),cf0[d],cf1[d],Tair[ilag],cf3[d],FaveFlow[ilag],cf2[d])
+                   print(mlag,d,ilag)
+                
             ReleaseTemp.append(rt)
         else:
             ReleaseTemp.append([dayofyear]+n99_line)
+
+    # got an EOF error in FORTRAN ... adding extra day to see if it solves this
+    ReleaseTemp.append([dayofyear+1]+n99_line)
     
     # Write to npt format
     with open(targt_temp_npt_filepath,'w') as fp:
@@ -246,6 +253,40 @@ def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_te
 
     return True
 
+def update_W2_Folsom_iterative_retart_date(rtw,model_dir):    
+    starttime_str = rtw.getStartTimeString()
+    doy = HecTime(starttime_str).dayOfYear()
+    restart_doy = 120 if doy < 120 else doy + 1 # write restart file either May 1 or start day + 1
+
+    # fileinput should backup and write over file, with inplace=True
+
+    # replace doy in line 403 (index 402) in w2_con.csv
+    w2_con = os.path.join(model_dir,"w2_con.csv")
+    for line in fileinput.input(w2_con, inplace=True):
+        if fileinput.filelineno()==403:
+            print("%i,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"%restart_doy)
+        else:
+            print("%s" % line.rstrip())
+
+    # replace doy in line 4 in folsom_in.npt
+    folsom_in = os.path.join(model_dir,"folsom_in.npt")
+    for line in fileinput.input(folsom_in, inplace=True):
+        if fileinput.filelineno()==4:
+            print("%i,,,,,,,,,,,,,,,,,,"%restart_doy)
+        else:
+            print("%s" % line.rstrip())
+
+
+def update_W2_Folsom_iterative_schedule_number(run_dir,model_dir):
+    with open(os.path.join(run_dir,'current_ensemble.txt'),'r') as fp:
+        ensemble_number = int(fp.readline().strip())
+
+    # replace doy in line 2 of "BestGuessTTS.csv"
+    best_guess_file = os.path.join(model_dir,"BestGuessTTS.csv")
+    with open(best_guess_file,'w') as fp:
+        fp.write("Year,BG,CB\n1,%i,10\n"%ensemble_number)
+
+
 def storage_to_elev(res_name,elev_stor_area,forecast_dss,storage_rec,conic=False):
     dssFmRec = HecDss.open(forecast_dss)
     tsc = dssFmRec.get(storage_rec,True) # read ALL data in record
@@ -257,7 +298,7 @@ def storage_to_elev(res_name,elev_stor_area,forecast_dss,storage_rec,conic=False
     else:
         for j in range(tsc.numberValues):
             elev.append(cbfj.linear_interpolation(elev_stor_area['stor'], elev_stor_area['elev'], tsc.values[j]))
-            print('stor2elev: ',j,tsc.times[j],tsc.values[j])
+            print('stor2elev: ',j,tsc.times[j],tsc.values[j],elev[-1])
 
     #if tsc.type.lower != 'inst-val':
     #    # going from PER-CUM -> INST-VAL, so need to move the times up one to account for the end-of-period reporting of PER-CUM
@@ -299,19 +340,60 @@ def invent_elevation(res_name,forecast_dss,storage_rec,elev_constant_ft):
     dssFmRec.write(tsc)
     dssFmRec.close()
 
+def write_forecast_elevations(currentAlternative, rtw, forecast_dss, shared_dir):
+
+    # get date for starting elevation - look for end-of-month before start time
+    ht = HecTime(rtw.getStartTimeString())
+    if ht.month() == 1:
+        start_dt = dt.datetime(ht.year()-1,12,31)
+        start_str = start_dt.strftime('%d%b%Y')+ ' 2400'
+    else:
+        start_dt = dt.datetime(ht.year(),ht.month(),1)
+        start_dt = start_dt - dt.timedelta(days=1)
+        start_str = start_dt.strftime('%d%b%Y')+ ' 2400'
+    end_str = rtw.getEndTimeString()   
+
+    currentAlternative.addComputeMessage('Forecast Elevations: '+start_str+' '+end_str)
+
+    elev_stor_area = cbfj.read_elev_storage_area_file(os.path.join(shared_dir, 'AMR_scratch_Folsom.csv'), 'Folsom')
+
+    # convert Folsom storage to elevation
+    storage_to_elev('Folsom',elev_stor_area,forecast_dss,'//FOLSOM/STORAGE//1Month/AMER_BC_SCRIPT/',conic=False)
+    
+    # write an hourly forecast elevation based on starting elevation and flows
+    DSS_Tools.resample_dss_ts(forecast_dss,'//FOLSOM/FLOW-RELEASE//1Hour/AMER_BC_SCRIPT/',None,forecast_dss,'1DAY')
+    inflow_records = ['//Folsom-NF-in/FLOW-IN//1Day/AMER_BC_SCRIPT/',
+                      '//Folsom-SF-in/FLOW-IN//1Day/AMER_BC_SCRIPT/',
+                      '/AMERICAN RIVER/FOLSOM LAKE/FLOW-ACC-DEP//1Day/AMER_BC_SCRIPT/']  # this actually evap, but negative already, so it goes as inflow
+    outflow_records = ['//FOLSOM/FLOW-RELEASE//1Day/AMER_BC_SCRIPT/']
+    starting_elevation = DSS_Tools.first_value(forecast_dss,'//Folsom/ELEV//1Month/AMER_BC_SCRIPT/',start_str,end_str)
+    print('starting_elevation ',starting_elevation)
+
+    elev_calc_start_dt = start_dt + dt.timedelta(days=1)
+    elev_calc_start_str = elev_calc_start_dt.strftime('%d%b%Y')+ ' 2400'
+    #cbfj.predict_elevation(currentAlternative, rtw, 'Folsom Lake', inflow_records, outflow_records, starting_elevation,
+    cbfj.predict_elevation(currentAlternative, start_str, end_str, 'Folsom Lake', inflow_records, outflow_records, starting_elevation,
+                         elev_stor_area, forecast_dss, '//Folsom Lake/ELEV-FORECAST//1DAY/AMER_BC_SCRIPT/', forecast_dss, shared_dir,
+                         use_conic=False, alt_period=None, alt_period_string=None, balance_period_str='1Day')
+
+    # invent flow-reg reservoir daily elevation record from folsom elev (used for timing only)
+    invent_elevation('Natoma',forecast_dss,'//Folsom Lake/ELEV-FORECAST//1DAY/AMER_BC_SCRIPT/',123.0)
+    invent_elevation('Natoma',forecast_dss,'//FOLSOM/STORAGE//1Month/AMER_BC_SCRIPT/',123.0)
+
+
 def split_folsom_evap(forecast_dss,evap_rec):
     dssFmRec = HecDss.open(forecast_dss)
     tsc = dssFmRec.get(evap_rec,True)
     recparts = tsc.fullName.split('/')
     total_evap = tsc.values
 
-	# 2/3 to NF branch
+    # 2/3 to NF branch
     recparts[2] = 'Folsom Evap NF Split'
     tsc.fullName = '/'.join(recparts)
     tsc.values = [0.667*total_evap[j] for j in range(tsc.numberValues)]
     dssFmRec.write(tsc)
 
-	# 1/3 to SF branch, but using subtraction for numerical precision
+    # 1/3 to SF branch, but using subtraction for numerical precision
     recparts[2] = 'Folsom Evap SF Split'
     tsc.fullName = '/'.join(recparts)
     sf_values =  [total_evap[j] - tsc.values[j] for j in range(tsc.numberValues)]
@@ -319,6 +401,46 @@ def split_folsom_evap(forecast_dss,evap_rec):
     dssFmRec.write(tsc)
     
     dssFmRec.close()
+
+def split_nimbus_outflow(forecast_dss,nimbus_outflow_rec):
+    #tsc_outflow = DSS_Tools.dss_read_ts_safe(forecast_dss,nimbus_outflow_rec)
+    dssFm = HecDss.open(forecast_dss)
+    tsc_outflow = dssFm.get(nimbus_outflow_rec,True)
+    cfs2cms = 1.0/35.314666213 if tsc_outflow.units.lower() == 'cfs' else 1.0   # need CMS
+
+    hatchery_constant = 1.7 # cms
+    gate_max = 144.4 # cmm
+    
+    hatchery_flow = []
+    spill_flow = []
+    gated_spill_flow = []
+      
+    for vi, v in enumerate(tsc_outflow.values):
+        
+        gate_flow = tsc_outflow.values[vi]*cfs2cms - hatchery_constant
+        hatchery_flow.append(hatchery_constant)
+        if gate_flow > gate_max:
+            spill_flow.append(gate_flow - gate_max)
+            gated_spill_flow.append(gate_max)
+        else:
+            spill_flow.append(0.0)
+            gated_spill_flow.append(gate_flow)
+
+    tsc_outflow.units = 'cms'
+    
+    tsc_outflow.fullName = '/AMERICAN RIVER/LAKE NATOMA NIMBUS/FLOW-GATEDSPILLWAY//1Day/AMER_BC_SCRIPT/'
+    tsc_outflow.values = gated_spill_flow
+    dssFm.write(tsc_outflow)
+
+    tsc_outflow.fullName = '/AMERICAN RIVER/LAKE NATOMA NIMBUS/FLOW-SPILLWAY//1Day/AMER_BC_SCRIPT/'
+    tsc_outflow.values = spill_flow
+    dssFm.write(tsc_outflow)
+
+    tsc_outflow.fullName = '/AMERICAN RIVER/LAKE NATOMA NIMBUS/FLOW-FISHHATCHERY//1Day/AMER_BC_SCRIPT/'
+    tsc_outflow.values = hatchery_flow
+    dssFm.write(tsc_outflow)
+
+    dssFm.close()
 
 
 def write_qot_7outlets_flows(forecast_dss, starttime_str, endtime_str):
@@ -341,10 +463,10 @@ def write_qot_7outlets_flows(forecast_dss, starttime_str, endtime_str):
     
     cfs2cms = 1.0
     if tsc_flow.units.lower() == 'cfs':   # need CMS
-    	cfs2cms = 1.0/35.314666213
+        cfs2cms = 1.0/35.314666213
 
-	# divide up total folson flow
-	# 3 penstocks are evenly split, so we will link single DSS record to three outlets
+    # divide up total folson flow
+    # 3 penstocks are evenly split, so we will link single DSS record to three outlets
     penstock = []
     leakage = []
     spill = []
@@ -362,7 +484,7 @@ def write_qot_7outlets_flows(forecast_dss, starttime_str, endtime_str):
     recparts = tsc_flow.fullName.split('/')
     recparts[5] = '1day'   # just to make sure path correct, maybe preventing DLL crash?
     tsc_flow.units = 'cms'
-	
+    
     recparts[3] = 'FLOW-RELEASE-SINGLEPENSTOCK'
     tsc_flow.fullName = '/'.join(recparts)
     tsc_flow.values = penstock
@@ -394,7 +516,7 @@ def model_dir_from_run_dir(run_dir,model_place,model_name):
     return model_dir
 
 def remove_evap_from_inflows(forecast_dss, starttime_str, endtime_str):
-	# these better all be inn the same units - should all be CFS from bc script...
+    # these better all be inn the same units - should all be CFS from bc script...
 
     dssFmRec = HecDss.open(forecast_dss)
     tsc_nf = dssFmRec.read('//Folsom-NF-in/FLOW-IN//1Day/AMER_BC_SCRIPT/', starttime_str, endtime_str).getData()
@@ -449,9 +571,9 @@ def load_tt_data(forecast_dss, starttime_str, endtime_str):
             FaveFlow[j] = FaveFlow[j] / 35.314666213
 
     Tair = tsc_at.values
-    if tsc_at.units.lower() == 'c':   # need F
+    if tsc_at.units.lower() == 'f':   # need C
         for j in range(tsc_at.numberValues):
-            Tair[j] = Tair[j] * 9.0 / 5.0 + 32.0
+            Tair[j] = (Tair[j] - 32.0)* 5.0 / 9.0
     
     # get doy of year
     doys = []
@@ -459,3 +581,14 @@ def load_tt_data(forecast_dss, starttime_str, endtime_str):
         doys.append(tsc_flow.getHecTime(j).dayOfYear())
 
     return doys,FaveFlow,Tair
+
+def remove_folsom_lower_river_use(forecast_dss,lro_use_rec):
+    dssFm = HecDss.open(forecast_dss)
+    tsc = dssFm.get(lro_use_rec,True)
+    values = []
+    for i in range(tsc.numberValues):
+        values.append(-1.0)
+    tsc.values = values
+    dssFm.write(tsc)
+    dssFm.close()
+    

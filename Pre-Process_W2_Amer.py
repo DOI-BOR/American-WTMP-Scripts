@@ -27,7 +27,12 @@ def computeAlternative(currentAlternative, computeOptions):
     year = int(startyear_str)
 
     run_dir = computeOptions.getRunDirectory()
-    model_dir = fpp.model_dir_from_run_dir(run_dir,'Folsom','W2 Folsom')
+    model_name = 'W2 Folsom'  # base Folsom forecast model (iterative w/ bypass)
+    if "FixedATSP" in run_dir:
+        model_name += " FixedATSP"
+    if "NoBypass" in run_dir:
+        model_name += " NoBypass"
+    model_dir = fpp.model_dir_from_run_dir(run_dir,'Folsom',model_name)
     targt_temp_npt_filepath = os.path.join(model_dir,'TargetSchedulesA.npt') # overwrite what's there    
     shared_dir = os.path.join(fpp.study_dir_from_run_dir(run_dir),'shared')
     forecast_dss = os.path.join(shared_dir,'WTMP_American_forecast.dss')
@@ -36,18 +41,24 @@ def computeAlternative(currentAlternative, computeOptions):
     # forecast met data potentially has some weird units
     DMS_preprocess.fix_DMS_types_units(forecast_dss)
 
-	# convert Folsom storage to elevation
+    # convert Folsom storage to monthly elevation
     elev_stor_area = cbfj.read_elev_storage_area_file(os.path.join(shared_dir, 'AMR_scratch_Folsom.csv'), 'Folsom')
     fpp.storage_to_elev('Folsom',elev_stor_area,forecast_dss,'//FOLSOM/STORAGE//1Month/AMER_BC_SCRIPT/',conic=False)
 
     # invent Natoma elevation record from folsom storage rec
     fpp.invent_elevation('Natoma',forecast_dss,'//FOLSOM/STORAGE//1Month/AMER_BC_SCRIPT/',123.0)
 
+    # predict daily elevation, in case of start on arbitrary day
+    fpp.write_forecast_elevations(currentAlternative, rtw, forecast_dss, shared_dir)
+
     # flow balance: subtract muni/pump flow from total release to get flow through dam
     fpp.subtract_muni_pump(forecast_dss)
-	
+    
     # flow balance: split evap for W2
     fpp.split_folsom_evap(forecast_dss,'/AMERICAN RIVER/FOLSOM LAKE/FLOW-ACC-DEP//1Day/AMER_BC_SCRIPT/')
+
+    # divide Nimbus dam flow into 3, for the 3 gated spillways in W2 Natoma model
+    fpp.split_nimbus_outflow(forecast_dss,'/AMERICAN RIVER/LAKE NATOMA/FLOW-NIMBUS ACTUAL//1Day/AMER_BC_SCRIPT/')
 
     # get target temp location from dummy dss file somehow?
 
@@ -55,7 +66,7 @@ def computeAlternative(currentAlternative, computeOptions):
     start_doy = HecTime(starttime_str).dayOfYear() #.value()
     endtime_doy = HecTime(endtime_str).dayOfYear() #.value()
 
-    doys,FaveFlow,Tair = fpp.load_tt_data(forecast_dss, starttime_str, endtime_str)
+    doys,FaveFlow,Tair = fpp.load_tt_data(forecast_dss, starttime_str, endtime_str) # day-of-year,CMS,C
 
     target_temp_write = fpp.write_target_temp_npt(year,1,doys,Tair,FaveFlow,schedule_csv,targt_temp_npt_filepath,lagWatt=False)
 
@@ -72,7 +83,14 @@ def computeAlternative(currentAlternative, computeOptions):
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=0.0, what='flow', 
                         dss_type='PER-AVER', period='1HOUR',cpart='ZEROS',fpart='ZEROS')
 
-    #data_preprocess = forecast_preprocess_W2_American(currentAlternative, computeOptions)
+    # update W2 interative control files for restart date
+    # this functionality is already in the w2 plugin - did you check to see if foslsom iterative compute option is checked??
+    fpp.update_W2_Folsom_iterative_retart_date(rtw,model_dir)
+
+    # if this is a non-iterative simulation, put the correct ensemble number into the Folsom.in file 
+    if 'FixedATSP' in model_name:
+        w2run_base,_ = os.path.split(run_dir)
+        fpp.update_W2_Folsom_iterative_schedule_number(w2run_base,model_dir)
 
     if target_temp_write and folsom_outlets:
         return True

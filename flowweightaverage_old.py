@@ -1,23 +1,22 @@
 from hec.heclib.dss import HecDss
-from hec.heclib.util.Heclib import UNDEFINED_DOUBLE
 from hec.io import DSSIdentifier
 from hec.io import TimeSeriesContainer
 from rma.util.RMAConst import MISSING_DOUBLE
-import math,sys,datetime
-import DSS_Tools
-reload(DSS_Tools)
+import math
 
 #version 2.1
-#modified 11-30-2022 by Scott Burdick-Yahya
+#modified 02-16-2023 by Scott Burdick-Yahya
 
 def organizeLocations(currentAlternative, locations):
     locations_list = []
+
     if len(locations) % 2 != 0:
         currentAlternative.addComputeMessage("Uneven amount of Flow/Temp pairings. Check inputs.")
         sys.exit(1)
     for li, location in enumerate(locations):
         tspath =str(currentAlternative.loadTimeSeries(location))
-        tspath = DSS_Tools.fixInputLocationFpart(currentAlternative, tspath)
+        print('input tspath',tspath)
+        #tspath = fixInputLocationFpart(currentAlternative, tspath)
         if li % 2 == 0: 
             current_pair = [tspath]
         else:
@@ -25,115 +24,15 @@ def organizeLocations(currentAlternative, locations):
             locations_list.append(current_pair)
     return locations_list
 
-
-def flow_in_cfs(units,flows):
-    if units.lower()=='cfs':
-        return flows
-    elif units.lower()=='cms':
-        values_converted = []
-        for f in flows:
-            values_converted.append(f * 35.314666213)
-        return values_converted
-    else:
-        print('FWA2: flow units not known:',units)
-        sys.exit(-1)
-
-def temperature_in_C(units,temps):
-    if units.lower()=='c' or units.lower()=='deg c':
-        return temps
-    elif units.lower()=='f' or units.lower()=='deg f':
-        values_converted = []
-        for t in temps:
-            values_converted.append((t - 32.0)*5.0/9.0)
-        return values_converted
-    else:
-        print('FWA2: temperature units not known:',units)
-        sys.exit(-1)
-
-def FWA2(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=None, bad_data_fill_tempC=None, last_override=False):
-    '''Made a new flow-weighted average temperature function; other one was producing weirdness '''
-    starttime_str = timewindow.getStartTimeString()
-    endtime_str = timewindow.getEndTimeString()
-    currentAlt.addComputeMessage('Looking from {0} to {1}'.format(starttime_str, endtime_str))
-    dssFm = HecDss.open(dssFile)
-
-    flow_total = []
-    flowtemp_total = []
-    n_pairs = []
-
-    flow_limit = 0.0 if cfs_limit is None else cfs_limit
-    fill_value = UNDEFINED_DOUBLE if bad_data_fill_tempC is None else bad_data_fill_tempC
-    
-    for dspi, dsspaths in enumerate(DSSPaths_list):
-        flow_dss_path = dsspaths[0]
-        temp_dss_path = dsspaths[1]
-        currentAlt.addComputeMessage(str(flow_dss_path))
-        print('FWA2 Reading:',flow_dss_path)
-        tsc_flow = dssFm.read(flow_dss_path, starttime_str, endtime_str, False).getData()
-        flows = flow_in_cfs(tsc_flow.units,tsc_flow.values)
-        print('FWA2 Reading:',temp_dss_path)
-        last_rec_valid = False  # test to see if we can use override values
-        try:
-            tsc_temp = dssFm.read(temp_dss_path, starttime_str, endtime_str, False).getData()
-            temps = temperature_in_C(tsc_temp.units,tsc_temp.values)
-            print('tscf',tsc_flow.values[0])
-            print(flows[0])
-            print('tsct',tsc_temp.values[0])
-            print(temps[0])
-    
-            # use type of 1st temp record
-            if dspi==0:
-                nrecs = len(flows)
-                temp_type = tsc_temp.type
-    
-            if len(flows) != nrecs or len(temps) != nrecs:
-                currentAlt.addComputeMessage("FWA2: record lengths do not match!")
-                print("FWA2: record lengths do not match!",nrecs,len(flows),len(temps))
-                sys.exit(-1)
-    
-            for i in range(nrecs):
-                if dspi==0:
-                    n_pairs.append(0) # init counter for number of flow/temp pairs in weighted average
-                    flow_total.append(0.0)
-                    flowtemp_total.append(0.0)
-                # perform a lot of checks on data
-                #print(i,flows[i],temps[i])
-                if not math.isnan(flows[i]) and not math.isnan(temps[i]):
-                    if flows[i] > flow_limit and flows[i] < 9.0e6: # could lower upper limit to something relevant to watershed
-                        if temps[i] >= 0.0 and temps[i] <= 80.0:
-                            # passed the data checks
-                            
-                            n_pairs[i] += 1
-                            flow_total[i] += flows[i]
-                            flowtemp_total[i] += flows[i]*temps[i]
-    
-                            #print(dspi,i,n_pairs[i],flows[i],temps[i],flow_total[i],flowtemp_total[i])
-            last_rec_valid = True
-        except:
-            currentAlt.addComputeMessage('FWA2: data not addeded for record: '+temp_dss_path)
-            last_rec_valid = False
-        
-    fwat = []
-    print('nrecs:',nrecs)
-    for i in range(nrecs):
-        if n_pairs[i] > 0:
-            fwat.append(flowtemp_total[i]/flow_total[i])        
-        else:
-            fwat.append(fill_value)
-        if last_override and last_rec_valid:
-            if flows[i] > flow_limit and flows[i] < 9.0e6: # could lower upper limit to something relevant to watershed
-                if temps[i] >= 0.0 and temps[i] <= 80.0:
-                    fwat[i] = temps[i]
-        #print(i,fwat[i])
-
-    # use last temp container to write
-    tsc_temp.type = temp_type
-    tsc_temp.fullName = outputname
-    tsc_temp.values = fwat
-    dssFm.write(tsc_temp)
-    dssFm.close()
-    return 0
-
+def fixInputLocationFpart(currentAlternative, tspath):
+    new_fpart_start = ':'.join(currentAlternative.getInputFPart().split(':')[:-1])
+    tspath = tspath.split('/')
+    fpart = tspath[6]
+    fpart_split = fpart.split(':')
+    new_fpart = new_fpart_start + ':' + fpart_split[-1]
+    tspath[6] = new_fpart
+    tspath = '/'.join(tspath)
+    return tspath
 
 def FWA(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=None):
     starttime_str = timewindow.getStartTimeString()
@@ -178,7 +77,6 @@ def FWA(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=No
         TempTS = dssFm.read(temp_dss_path, starttime_str, endtime_str, False)
         TempTS = TempTS.getData()
         tempunits = TempTS.units
-        temptype = TempTS.type
         dss_data[dspi]['temp'] = TempTS.values
 
 #    print(readabledates)
@@ -220,7 +118,7 @@ def FWA(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=No
     for i, flow in enumerate(total_flows):
         flowtemp = total_flowtemp[i]
         if flow == 0:
-            FW_Avg_vals.append(UNDEFINED_DOUBLE)
+            FW_Avg_vals.append(MISSING_DOUBLE)
         else:
             FW_Avg_vals.append(flowtemp / flow)
     
@@ -230,7 +128,6 @@ def FWA(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=No
     tsc.values = FW_Avg_vals
     tsc.startTime = hecstarttimes[0]
     tsc.units = tempunits
-    tsc.type = temptype
     tsc.endTime = hecstarttimes[-1]
     tsc.numberValues = len(FW_Avg_vals)
     tsc.startHecTime = timewindow.getStartTime()
@@ -240,12 +137,8 @@ def FWA(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=No
     currentAlt.addComputeMessage("Number of Written values: {0}".format(len(FW_Avg_vals)))
     return 0
 
-def FWA_Daily(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=None,delay_days=0):
+def FWA_Daily(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=None):
     starttime_str = timewindow.getStartTimeString()
-    if delay_days > 0:
-        dt_start = DSS_Tools.hec_str_time_to_dt(starttime_str) + datetime.timedelta(days=delay_days)
-        starttime_str = dt_start.strftime('%d%b%Y %H%M')      
-    
     endtime_str = timewindow.getEndTimeString()
     currentAlt.addComputeMessage('Looking from {0} to {1}'.format(starttime_str, endtime_str))
     dssFm = HecDss.open(dssFile)
@@ -296,10 +189,8 @@ def FWA_Daily(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_li
         total_flows = []
         offset = 0
         
-        for i, flow in enumerate(dss_data[dspi]['flow']): #thats everyday bro            
+        for i, flow in enumerate(dss_data[dspi]['flow']): #thats everyday bro
             temp = dss_data[dspi]['temp'][i]
-            if i < 10:
-                print(i,'Flow-temp pair:',flow,temp)
             flowtemps.append(flow*temp)
         
         FWTemps_daily = []
@@ -346,16 +237,10 @@ def FWA_Daily(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_li
         total_FWA_FlowTemps.append(temp_Fwflowtemps_summed)
         
     FW_Avg_vals = []
-    print('len total_FWA_FlowTemps:',len(total_FWA_FlowTemps))
-    print('len total_Daily_flowsums:',len(total_Daily_flowsums))
     for i, tfwaft in enumerate(total_FWA_FlowTemps):
         total_Daily_flowsum = total_Daily_flowsums[i]
-        if i < 10:
-            print(i,'total_Daily_flowsum:',total_Daily_flowsum)
-            print(i,'tfwaft:',tfwaft)
-        if total_Daily_flowsum < 24.0:
-            FW_Avg_vals.append(UNDEFINED_DOUBLE)
-            #FW_Avg_vals.append(-5)
+        if total_Daily_flowsum == 0:
+            FW_Avg_vals.append(MISSING_DOUBLE)
         else:
             FW_Avg_vals.append(tfwaft/total_Daily_flowsum)
     

@@ -21,7 +21,10 @@ def computeAlternative(currentAlternative, computeOptions):
     locations = currentAlternative.getInputDataLocations()
     locations_paths = flowweightaverage.organizeLocations(currentAlternative, locations)
 
-	# get ResSim F-part from input locations
+    print('locations_paths:')
+    print(locations_paths)
+
+    # get ResSim F-part from input locations
     ressim_fpart = locations_paths[0][0].split('/')[6]
     
     currentAlternative.addComputeMessage('Found DSS paths:')
@@ -51,13 +54,32 @@ def computeAlternative(currentAlternative, computeOptions):
     print('outpath: '+outputpath)
     currentAlternative.addComputeMessage("Outputting to {0}".format(outputpath))
 
+    # flow-weight ave three penstock temps
     cfs_limit = 50.0  # float
-    flowweightaverage.FWA(currentAlternative, dss_file, rtw, locations_paths, outputpath, cfs_limit)
+    flowweightaverage.FWA(currentAlternative, dss_file, rtw, locations_paths[0:3], outputpath, cfs_limit)
 
     tspath = outputpath.split('/')
     tspath[5] = '1DAY'
     dailyoutputpath = '/'.join(tspath)
-    flowweightaverage.FWA_Daily(currentAlternative, dss_file, rtw, locations_paths, dailyoutputpath, cfs_limit)
+    flowweightaverage.FWA_Daily(currentAlternative, dss_file, rtw, locations_paths[0:3], dailyoutputpath, 
+                                cfs_limit, delay_days=1.0)
+
+    # flow-weight ave full dam outflow temp
+    outputpath_full_dam = currentAlternative.createOutputTimeSeries(outputlocations[1])    
+    tspath = str(outputpath_full_dam)
+    print('tspath: '+tspath)
+    tspath = tspath.split('/')
+    fpart = tspath[6]
+    #    new_fpart = fpart.lower().split(':scripting-')[0] #fpart will have scripting in it, but we want w2 version
+    #    new_fpart += ':ResSim-' #replace scripting with ressim
+    #    new_fpart += '-'.join(computeOptions.getSimulationName().split('-')[:-1]) #sim name will have the sim group, so snip that
+    tspath[6] = ressim_fpart
+    tspath[5] = '1DAY'
+    outputpath_full_dam = '/'.join(tspath)
+    print('outputpath_full_dam: '+outputpath_full_dam)
+    flowweightaverage.FWA_Daily(currentAlternative, dss_file, rtw, [locations_paths[3]], outputpath_full_dam,
+                                1.0, delay_days=1.0)
+    
     return True
 
 

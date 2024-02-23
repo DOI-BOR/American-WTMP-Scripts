@@ -211,7 +211,7 @@ def calc_equilibrium_temp(dtt, at, cl, sr, td, ws):
 
     for j in range(nt):
 
-        print('Equilibrium step ',j,' of ',nt)
+        #print('Equilibrium step ',j,' of ',nt)
         if j == 0:
             x0 = at[j]
         else:
@@ -226,12 +226,12 @@ def calc_equilibrium_temp(dtt, at, cl, sr, td, ws):
         try:
             te[j] = equilibrium_temp(dtt[j], at[j], cl[j], sr[j], ws[j], td[j], x0, type='nr')
         except:
-            print(j, ' Newton-Raphson failure (convergence).  Using bisection-solution equilibrium temp')
+            #print('  Equilibrium step ',j,' of ',nt, ' Newton-Raphson failure (convergence).  Using bisection-solution equilibrium temp')
             te[j] = te_bs
-        print(te[j],te_bs)
+        #print(te[j],te_bs)
 
         if abs(te[j] - te_bs) > 2.0:
-            print(j, ' Newton-Raphson failure (bad value).  Using bisection-solution equilibrium temp')
+            #print('  Equilibrium step ',j,' of ',nt, 'Newton-Raphson failure (bad value).  Using bisection-solution equilibrium temp')
             te[j] = te_bs
 
     return te
