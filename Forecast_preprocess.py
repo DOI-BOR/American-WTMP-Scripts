@@ -153,12 +153,21 @@ def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_te
     '''
 
     # regression parameters for Watt Ave temperature target location -> Folsom release temp - location == 1
-    watt_coeffs = [
-        [1.742667488, 1.946378758, 3.06584481, 4.840201945, 8.049595683, 7.500799095, 9.253058133, 7.075955433, 9.124569285, 9.766176345, 9.757233673, 8.166191567, 1.538956217],
-        [0.021320627, 0.013375836, 0.06344339, 0.030403094, 0.049018295, 0.035639445, 0.025695687, -0.015634303, 0.031555822, 0.084466248, 0.059540567, 0.190146509, 0.029265418],
-        [0.915301489, 0.93981272, 0.805478676, 0.840832742, 0.60822924, 0.83867899, 0.796822475, 0.885474387, 0.768244793, 0.694684248, 0.598376085, 0.511084103, 0.890790258],
-        [-0.420886457, -0.618205236, -0.825889537, -1.530553652, -1.782128308, -2.490257345, -2.912936501, -1.922854697, -2.658286723, -3.273160018, -2.166315306, -1.814512003, -0.223567678]
-    ]
+    watt_coeffs = [[ 1.81876287,  3.53936881,  4.98729431,  8.85508504, 11.86438162,
+        12.62006676, 13.08970612, 16.90056672, 15.26051768,  2.75799392,
+        -1.81979657, -1.3513815 ],
+       [ 0.11264133,  0.20514104,  0.1686952 ,  0.15834058,  0.13853404,
+         0.0864804 ,  0.04903162,  0.07265319,  0.18274807,  0.24001519,
+         0.23128533,  0.16759159],
+       [ 0.73259158,  0.77538058,  0.9613015 ,  0.7189698 ,  0.74203971,
+         0.80089022,  0.682267  ,  0.62275869,  0.454786  ,  0.6680434 ,
+         0.82870536,  0.68563562],
+       [-0.14771242, -1.49933353, -2.51250945, -3.03473477, -4.37180174,
+        -4.43688051, -3.29314944, -5.22242857, -4.50893573, -0.34458292,
+         0.70364452,  1.78619426],
+       [ 0.57283027,  0.4516801 ,  0.9059361 ,  0.90501824,  0.9544556 ,
+         0.94857614,  0.93717274,  0.91059113,  0.83642545,  0.81923008,
+         0.95854366,  0.87062062]]
 
     # regression parameters for Havel Ave temperature target location -> Folsom release temp - location == 2
     hazel_coeffs = [
@@ -182,7 +191,7 @@ def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_te
     elif location==3: # Havel Ave
         coeffs = hazel_coeffs
     else:
-        raise ValueError("Forecast Preprocess: W2 downstream target not supported:"+str(locations))
+        raise ValueError("Forecast Preprocess: W2 downstream target not supported:"+str(location))
         
     # TODO: needs work as the form of the regression is different below
     #elif location==3: # RiverMile
@@ -217,23 +226,33 @@ def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_te
             # example downstream target schedule:
             # jday,may,jun,jul,aug,sep,oct,nov            
             #   20, 65, 65, 65, 65, 65, 63, 58  <-- deg F, except jday
-            mlag = dateLag.month - 4 # index to schedule list above, accounting for lag date and jday as first index
-            ilag = min(i+lag,n_days) # lag data index, but don't run past end of data
+            mlag = dateLag.month - 4  # index to schedule list above, accounting for lag date and jday as first index
+            mlag = min(mlag,7)
+            ilag = min(i + lag, n_days-1)  # lag data index, but don't run past end of data
             d = dayofyear - 1 # day-of-year, minus 1, as index to coeffs
+
             rt = [dayofyear]
             for k,sched in enumerate(monthlyTempsSched):
                 # Below is original code, which has some negatives that don't make a lot of sense? Copied to python exactly anyway
                 # FORTRAN: ReleaseTemp(k,i)=(-((TTarg(month(k),i)-32)/1.8)+int(m)+x1(m)*aveTair(k)+x3(m)*log10(FaveFlow(k)))/(-x2(m))
                 # JYTHON:               (-1.0*((sched[mlag]-32.0)/1.8)+cf0[d] + cf1[d]*Tair[ilag] + cf3[d]*math.log10(FaveFlow[ilag]))/(-1.0*cf2[d])
-                rt.append( (-1.0*((float(sched[mlag])-32.0)/1.8)+cf0[d] + cf1[d]*Tair[ilag] + cf3[d]*math.log10(FaveFlow[ilag]))/(-1.0*cf2[d]) )
-                
+
+                target_T = (float(sched[mlag]) - 32.0) / 1.8
+
+                release_T =  (-1.0*target_T + cf0[d] + cf1[d]*Tair[ilag] + cf3[d] * math.log10(FaveFlow[ilag])) / (-1.0*cf2[d])
+
                 # TODO: insert RiverMile calc here, if location==3
 
+                if release_T > target_T or FaveFlow[ilag] > 300.0:
+                    release_T = target_T
+
+                rt.append(release_T)
+                
                 # Debug
-                if k==0:
-                   print(rt[-1])
-                   print(float(sched[mlag]),cf0[d],cf1[d],Tair[ilag],cf3[d],FaveFlow[ilag],cf2[d])
-                   print(mlag,d,ilag)
+                #if k==0:
+                #   print(rt[-1])
+                #   print(float(sched[mlag]),cf0[d],cf1[d],Tair[ilag],cf3[d],FaveFlow[ilag],cf2[d])
+                #   print(mlag,d,ilag)
                 
             ReleaseTemp.append(rt)
         else:
@@ -558,11 +577,12 @@ def subtract_muni_pump(forecast_dss):
 def load_tt_data(forecast_dss, starttime_str, endtime_str):
 
     dssFmRec = HecDss.open(forecast_dss)
-    tsm_flow = dssFmRec.read('//FOLSOM/FLOW-RELEASE//1Hour/AMER_BC_SCRIPT/', starttime_str, endtime_str)
+    tsm_flow = dssFmRec.read('/AMERICAN RIVER/LAKE NATOMA/FLOW-NIMBUS ACTUAL//1Day/AMER_BC_SCRIPT/', starttime_str, endtime_str)
     tsm_at = dssFmRec.read('/MR Am.-Natoma Lake/Fair Oaks/Temp-Air//1Hour/251.40.53.1.1/', starttime_str, endtime_str)
     dssFmRec.close()
 
-    tsc_flow = DSS_Tools.standardize_interval(tsm_flow,'1day').getData()
+    #tsc_flow = DSS_Tools.standardize_interval(tsm_flow,'1day').getData()
+    tsc_flow = tsm_flow.getData()
     tsc_at = DSS_Tools.standardize_interval(tsm_at,'1day').getData()
 
     FaveFlow = tsc_flow.values
