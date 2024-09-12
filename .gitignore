@@ -1,4 +1,6 @@
 *.log
 *.bak
+*.class
 **/*.log
 **/*.bak
+**/*.class
