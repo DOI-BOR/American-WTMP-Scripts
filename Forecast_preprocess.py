@@ -378,6 +378,7 @@ def write_forecast_elevations(currentAlternative, rtw, forecast_dss, shared_dir)
 
     # convert Folsom storage to elevation
     storage_to_elev('Folsom',elev_stor_area,forecast_dss,'//FOLSOM/STORAGE//1Month/AMER_BC_SCRIPT/',conic=False)
+    storage_to_elev('Folsom',elev_stor_area,forecast_dss,'/AMERICAN RIVER/FOLSOM LAKE/STORAGE-CVP//1Day/AMER_BC_SCRIPT/',conic=False)
     
     # write an hourly forecast elevation based on starting elevation and flows
     DSS_Tools.resample_dss_ts(forecast_dss,'//FOLSOM/FLOW-RELEASE//1Hour/AMER_BC_SCRIPT/',None,forecast_dss,'1DAY')
