@@ -1,8 +1,13 @@
 import sys
 print(sys.path)
 
+from hec.heclib.dss import HecDss
+
 import flowweightaverage
 reload(flowweightaverage)
+
+import DSS_Tools
+reload(DSS_Tools)
 
 ##
 #
@@ -16,11 +21,22 @@ reload(flowweightaverage)
 #
 ##
 
+ResSimFolsomInputs = [
+  ['P1 Flow','P1 Temp'],
+  ['P2 Flow','P2 Temp'],
+  ['P3 Flow','P3 Temp'],
+  ['Folsom Flow','Folsom Temp']
+]
+
+
 def computeAlternative(currentAlternative, computeOptions):
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName())
-    locations = currentAlternative.getInputDataLocations()
-    locations_paths = flowweightaverage.organizeLocations(currentAlternative, locations)
+    #locations = currentAlternative.getInputDataLocations()
+    #locations_paths = flowweightaverage.organizeLocations(currentAlternative, locations)
 
+    locations_obj = currentAlternative.getInputDataLocations()
+    locations_paths = DSS_Tools.organizeLocationsPaired(currentAlternative, locations_obj, ResSimFolsomInputs, return_dss_paths=True)
+    
     print('locations_paths:')
     print(locations_paths)
 
@@ -61,8 +77,8 @@ def computeAlternative(currentAlternative, computeOptions):
     tspath = outputpath.split('/')
     tspath[5] = '1DAY'
     dailyoutputpath = '/'.join(tspath)
-    flowweightaverage.FWA_Daily(currentAlternative, dss_file, rtw, locations_paths[0:3], dailyoutputpath, 
-                                cfs_limit, delay_days=1.0)
+    flowweightaverage.FWA2_Daily(currentAlternative, dss_file, rtw, locations_paths[0:3], dailyoutputpath, 
+                                cfs_limit, delay_days=1,delay_hours=1)
 
     # flow-weight ave full dam outflow temp
     outputpath_full_dam = currentAlternative.createOutputTimeSeries(outputlocations[1])    
@@ -77,9 +93,42 @@ def computeAlternative(currentAlternative, computeOptions):
     tspath[5] = '1DAY'
     outputpath_full_dam = '/'.join(tspath)
     print('outputpath_full_dam: '+outputpath_full_dam)
-    flowweightaverage.FWA_Daily(currentAlternative, dss_file, rtw, [locations_paths[3]], outputpath_full_dam,
-                                1.0, delay_days=1.0)
+    flowweightaverage.FWA2_Daily(currentAlternative, dss_file, rtw, [locations_paths[3]], outputpath_full_dam,
+                                0.0, delay_days=1,delay_hours=1) # there is garbage in this record until 1:00 on second day
+
+
+    # Save Target Temp record with ResSim F-part for plotting
+    # ----------------------------------------------------------------
+    dssOut = HecDss.open(dss_file)
+    target_t_sched = "/WTMP_American/Folsom Downstream/TEMP-WATER-TARGET//1Hour/AMER_BC_SCRIPT/"
+    tsc_sched = dssOut.get(target_t_sched,True)
     
+    # convert to C just so we don't go crazy using DSS
+    if tsc_sched.units.lower() == 'f':
+        tc = []
+        for tf in tsc_sched.values:
+            tc.append((tf-32.)*5.0/9.0)
+        tsc_sched.values = tc
+        tsc_sched.units = 'C'    
+    out_parts = target_t_sched.split('/')
+    out_parts[6] = ressim_fpart
+    tsc_sched.fullName = '/'.join(out_parts)
+    dssOut.put(tsc_sched) # write out copy under ressim_fpart
+    
+    dssOut.close()    
+
+    # Create Penstock Flow records minus leakage for buzz plots
+    # Currently, all leakage is added to penstock one
+    for j in range(1,4):
+        out_rec = '//Folsom Lake-Penstock %i minus leakage/Flow//1Hour/%s/'%(j,ressim_fpart)
+        if j==1:
+            subtraction_rec = '//Folsom_leakage/FLOW-LEAKAGE//1Hour/%s/'%(ressim_fpart)
+        else:
+            subtraction_rec = '//ZEROS/flow//1Hour/ZEROS-%s/'%(ressim_fpart)  # made by ResSim by upscaling a daily input.  will it always be in results with this name?
+        flow_Records = ['//Folsom Lake-Penstock %i/Flow//1Hour/%s/'%(j,ressim_fpart), subtraction_rec]
+        DSS_Tools.add_or_subtract_flows(currentAlternative, rtw, flow_Records, dss_file, [None,False], 
+                                        out_rec, dss_file, multiplier=[1.0,1.0],delay_days=1.0,delay_hours=1.0)
+
     return True
 
 

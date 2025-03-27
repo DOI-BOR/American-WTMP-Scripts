@@ -1,4 +1,5 @@
 from hec.heclib.dss import HecDss
+import hec.hecmath.TimeSeriesMath as tsmath
 from hec.heclib.util.Heclib import UNDEFINED_DOUBLE
 from hec.io import DSSIdentifier
 from hec.io import TimeSeriesContainer
@@ -6,6 +7,9 @@ from rma.util.RMAConst import MISSING_DOUBLE
 import math,sys,datetime
 import DSS_Tools
 reload(DSS_Tools)
+
+import tz_offset
+reload(tz_offset)
 
 #version 2.1
 #modified 11-30-2022 by Scott Burdick-Yahya
@@ -50,7 +54,8 @@ def temperature_in_C(units,temps):
         print('FWA2: temperature units not known:',units)
         sys.exit(-1)
 
-def FWA2(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=None, bad_data_fill_tempC=None, last_override=False):
+def FWA2(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=None, bad_data_fill_tempC=None, 
+         last_override=False,return_tsc=False):
     '''Made a new flow-weighted average temperature function; other one was producing weirdness '''
     starttime_str = timewindow.getStartTimeString()
     endtime_str = timewindow.getEndTimeString()
@@ -132,8 +137,10 @@ def FWA2(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=N
     tsc_temp.values = fwat
     dssFm.write(tsc_temp)
     dssFm.close()
-    return 0
-
+    if return_tsc:
+        return tsc_temp
+    else:
+        return 0
 
 def FWA(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=None):
     starttime_str = timewindow.getStartTimeString()
@@ -373,4 +380,88 @@ def FWA_Daily(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_li
     dssFm.close()
     currentAlt.addComputeMessage("Number of Written values: {0}".format(len(FW_Avg_vals)))
     return 0
+
+def F_to_C(t,is_in_F):
+    if is_in_F:
+        return (t-32.)*5./9.
+    else:
+        return t
+
+def FWA2_Daily(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=-1,delay_days=0,delay_hours=0):
+    '''FWA_Daily is not working so I made this one'''
+    
+    starttime_str = timewindow.getStartTimeString()
+    if delay_days > 0:
+        dt_start = DSS_Tools.hec_str_time_to_dt(starttime_str) + datetime.timedelta(days=delay_days,hours=delay_hours)
+        starttime_str = dt_start.strftime('%d%b%Y %H%M')      
+    
+    endtime_str = timewindow.getEndTimeString()
+    currentAlt.addComputeMessage('Looking from {0} to {1}'.format(starttime_str, endtime_str))
+    dssFm = HecDss.open(dssFile)
+
+    for dspi, dsspaths in enumerate(DSSPaths_list):
+        flow_dss_path = dsspaths[0]
+        currentAlt.addComputeMessage(str(flow_dss_path))        
+        tsc_flow = dssFm.read(flow_dss_path, starttime_str, endtime_str, False).getData()
+        if dspi==0:
+            # get datetimes for filtering by day
+            dtt = DSS_Tools.hectime_to_datetime(tsc_flow)
+        
+        to_cfs = 1.0
+        if tsc_flow.units.lower() == 'cms':
+            to_cfs = 35.314666213
+
+        temp_dss_path = dsspaths[1]
+        currentAlt.addComputeMessage(str(temp_dss_path))
+        tsc_temp = dssFm.read(temp_dss_path, starttime_str, endtime_str, False).getData()
+        if dspi==0:    
+            # make daily tsc container from input, arrays once we know length
+            out_tsc = tsmath(tsc_temp).transformTimeSeries('1DAY',"","AVE").getData()
+            nDaily = len(out_tsc.values)
+            flow = [0.0 for i in range(nDaily)]
+            flowtemp = [0.0 for i in range(nDaily)]
+            fwa = [UNDEFINED_DOUBLE for i in range(nDaily)]
+            
+        to_C = False
+        if tsc_temp.units.lower() == 'f' or tsc_temp.units.lower() == 'degf':
+            to_C = True
+
+        # iteraite over small-than-daily entries and put in sequenial day arrays
+        di = 0
+        dt0 = dtt[0] + tz_offset.timedelta
+        last_day = dt0.day
+        for i,(f,t) in enumerate(zip(tsc_flow.values,tsc_temp.values)):
+            # increment day di when day changes
+            dttz = dtt[i] + tz_offset.timedelta
+            if i < 50:
+                print(i,di,last_day,dttz.strftime('%d%b%Y %H%M'))
+            if dttz.day != last_day:
+                last_day = dttz.day
+                di += 1
+                if di >= nDaily:
+                    break
+            f1 = f*to_cfs
+            if i < 50:
+                print(i,di,last_day,dttz.strftime('%d%b%Y %H%M'),f1,F_to_C(t,to_C))
+            if f1 > cfs_limit and t >= 0.0 and t < 120.:  # some basic filters, sometimes there is an undefined value in at start/end
+                flow[di] += f1
+                flowtemp[di] += f1*F_to_C(t,to_C)
+
+    # find temp
+    for i in range(nDaily):
+        if i < 4:
+            print(i,flowtemp[i],flow[i])
+        if flow[i] > 0.0:
+            fwa[i] = flowtemp[i]/flow[i]
+    
+    out_tsc.fullName = outputname
+    out_tsc.units = 'C'
+    out_tsc.values = fwa
+    dssFm.write(out_tsc)
+    dssFm.close()
+        
+    return 0
            
+
+
+

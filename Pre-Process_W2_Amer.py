@@ -68,7 +68,7 @@ def computeAlternative(currentAlternative, computeOptions):
 
     doys,FaveFlow,Tair = fpp.load_tt_data(forecast_dss, starttime_str, endtime_str) # day-of-year,CMS,C
 
-    target_temp_write = fpp.write_target_temp_npt(year,1,doys,Tair,FaveFlow,schedule_csv,targt_temp_npt_filepath,lagWatt=False)
+    target_temp_write = fpp.write_target_temp_npt(year,1,doys,Tair,FaveFlow,schedule_csv,targt_temp_npt_filepath,lagWatt=True)
 
     folsom_outlets = fpp.write_qot_7outlets_flows(forecast_dss, starttime_str, endtime_str)
 
@@ -84,13 +84,16 @@ def computeAlternative(currentAlternative, computeOptions):
                         dss_type='PER-AVER', period='1HOUR',cpart='ZEROS',fpart='ZEROS')
 
     # update W2 interative control files for restart date
-    # this functionality is already in the w2 plugin - did you check to see if foslsom iterative compute option is checked??
-    fpp.update_W2_Folsom_iterative_retart_date(rtw,model_dir)
+    # this functionality is already in the w2 plugin - did you check to see if folsom iterative compute option is checked??
+    fpp.update_W2_Folsom_iterative_restart_date(rtw,model_dir)
 
-    # if this is a non-iterative simulation, put the correct ensemble number into the Folsom.in file 
-    if 'FixedATSP' in model_name:
-        w2run_base,_ = os.path.split(run_dir)
-        fpp.update_W2_Folsom_iterative_schedule_number(w2run_base,model_dir)
+    # if this is a non-iterative simulation, put the correct ensemble number into the 'Set Guess' file 
+    # -- edit, 2025-01-27, B. Saenz.  We want to set this correct ensemble for all runs, as it tells also
+    # tells the iterative version of Folsom W2 to start with a parituclar schedule, so save time
+    #if 'FixedATSP' in model_name:
+
+    w2run_base,_ = os.path.split(run_dir)
+    fpp.update_W2_Folsom_iterative_schedule_number(w2run_base,model_dir)
 
     if target_temp_write and folsom_outlets:
         return True

@@ -16,6 +16,8 @@ reload(fpp)
 import create_balance_flow_jython as cbfj
 reload(cbfj)
 
+
+
 def computeAlternative(currentAlternative, computeOptions):
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName())
     currentAlternative.addComputeMessage('\n')

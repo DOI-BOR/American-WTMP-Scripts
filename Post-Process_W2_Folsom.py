@@ -5,9 +5,17 @@ from hec.heclib.util.Heclib import UNDEFINED_DOUBLE
 from hec.io import DSSIdentifier
 from hec.io import TimeSeriesContainer
 from hec.heclib.util import HecTime
+import hec.hecmath.TimeSeriesMath as tsmath
+
+import DSS_Tools
+reload(DSS_Tools)
 
 import Forecast_preprocess as fpp
 reload(fpp)
+
+# NOTE: As of 2025-02 this script/model alternative is unused. For W2_Folsom - only models, this script have been
+# replaced by theoutput link sciprt for folsom for consistency. -ben saenz
+
 
 ##
 #
@@ -44,6 +52,15 @@ def computeAlternative(currentAlternative, computeOptions):
     forecast_dss = os.path.join(shared_dir,'WTMP_American_forecast.dss')
     schedule_csv = os.path.join(model_dir,'SchedulesA.csv')
 
+    locations = currentAlternative.getInputDataLocations() # should be only one, W2 Folsom outflow temp
+    locations_path = str(currentAlternative.loadTimeSeries(locations[0]))
+
+    print('locations_path:')
+    print(locations_path)
+
+    # get W2 Folsom F-part from input locations    
+    W2_fpart = locations_path.split('/')[6]
+
     # get scripted output locations
     outputlocations = currentAlternative.getOutputDataLocations()
     outputpaths = []
@@ -79,8 +96,13 @@ def computeAlternative(currentAlternative, computeOptions):
 
     # need to line up schedule with run time window ... hmm use doy of start date and find nearest date? Read the TT in output dss for dates?
     tsc_sched = rectify_tsc_dates_to_model_year(tsc_sched,year)
-
-    
+    # convert to C just so we don't go crazy using DSS
+    if tsc_sched.units == 'F':
+        tc = []
+        for tf in tsc_sched.values:
+            tc.append((tf-32.)*5.0/9.0)
+        tsc_sched.values = tc
+        tsc_sched.units = 'C'    
     dssOut = HecDss.open(dss_file)
 
     # write schedule number to output DSS
@@ -88,28 +110,59 @@ def computeAlternative(currentAlternative, computeOptions):
     out_parts = outputpaths[0].split('/')
     out_parts[5] = sched_parts[5] # get period from original record
     tsc_sched.fullName = '/'.join(out_parts)
-    tsc_sched.numberValues = len(tsc_sched.values)
+    #tsc_sched.numberValues = len(tsc_sched.values)
     #tsc_sched.setStoreAsDoubles(True)
-    print('writing W2 Schedule Targt Temps: '+tsc_sched.fullName)
+    print('writing W2 Schedule Target Temps: ')
+    print('    '+dss_file)
+    print('    '+tsc_sched.fullName)
+    
+    #print(tsc_sched.values)
+    #print(len(tsc_sched.values))
     dssOut.put(tsc_sched)  # TODO:  Why does this never show up in output file???
     
     # use above tsc to write constant nSchedule to dss, I guess
     print('writing W2 Schedule Number: '+outputpaths[1])
+    print('    '+dss_file)
+    print('    '+outputpaths[1])
     write_constant_1day_ts(dssOut,outputpaths[1],rtw,nSchedule)
+    
+
+    # back calc dowstream temp using W2 regressions
+    currentAlternative.addComputeMessage("Back-calculating downstream temperature using W2 regressions...")
+    doys,FaveFlow,Tair = fpp.load_tt_data(forecast_dss, starttime_str, endtime_str) # day-of-year,CMS,C    
+    #TModel_tsm = DSS_Tools.dss_read_ts_safe(forecast_dss,dssRec,starttime_str,endtime_str)
+    TModel_tsc = currentAlternative.loadTimeSeries(locations[0])
+    TModel_tsm = tsmath(TModel_tsc)
+    TModel_tsc_daily = DSS_Tools.standardize_interval(TModel_tsm,'1day').getData()
+    dtt,DownstreamTemp = fpp.calc_downstream_temp_W2(year,1,doys,Tair,TModel_tsc_daily.values,FaveFlow,lagWatt=False)
+
+    out_parts = outputpaths[2].split('/')
+    out_parts[5] = '1Day'
+    TModel_tsc_daily.fullName = '/'.join(out_parts)
+    print('writing W2 Downstream Regression calc: '+TModel_tsc_daily.fullName)
+    #print(DownstreamTemp)
+    TModel_tsc_daily.values = DownstreamTemp
+    print('    '+dss_file)
+    print('    '+TModel_tsc_daily.fullName)
+    dssOut.put(TModel_tsc_daily)
     dssOut.close()
     
     return True
 
 
 def rectify_tsc_dates_to_model_year(tsc,model_year):
-
+    '''If you mess up these dates, the DSS write fails silently, and may mess up future writes while the file is open!
+    '''
     ystr = str(model_year)
 
     new_hec_times = []
     for j in range(tsc.numberValues):
         # Assuming hectime can be converted to Java Date or has method to get the equivalent
-        date_str = tsc.getHecTime(j).dateAndTime()  # 01Jan2010 0000
-        date_str = date_str[:5]+ystr+date_str[9:]
+        date_str = tsc.getHecTime(j).dateAndTime()  # NOT 05Jan2010 0000, actually '5 January 2010, 24:00'
+        #print(date_str)
+        #date_str = date_str[:5]+ystr+date_str[9:]
+        date_str = date_str[:-11] + ystr + date_str[-7:]
+        print(date_str)
         new_hec_times.append(HecTime(date_str).value())
 
     tsc.times = new_hec_times

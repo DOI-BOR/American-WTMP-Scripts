@@ -83,7 +83,7 @@ def interp_monthly_coeff_daily(monthly_coeffs):
     month_midpoints_padded = [-14.5] + month_midpoints + [366.0+15.5]
     coeffs_padded = [monthly_coeffs[-1],] + monthly_coeffs + [monthly_coeffs[0],]
     daily_coeff = []
-    for i in range(1,367):
+    for i in range(366):
         daily_coeff.append(interp(i,month_midpoints_padded,coeffs_padded))
     return daily_coeff
 

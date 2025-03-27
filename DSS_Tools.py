@@ -16,6 +16,76 @@ from java.util import Vector, Date
 import datetime
 from hec.heclib.util import HecTime
 
+
+def copy_dss_ts(dss_rec,new_fpart=None,new_dss_rec=None,
+                dss_file_path=None,dss_file_handle=None):
+
+       # error check inputs - there are flexible way to copy record
+    if dss_file_path is None and dss_file_handle is None:
+        raise ValueError('copy_dss_rec_to_new_fpart: you must supply either a valid dss_file_path OR dss_file_handle')
+    if new_fpart is None and new_dss_rec is None:
+        raise ValueError('copy_dss_rec_to_new_fpart: you must supply either a new_fpart OR new_dss_rec')
+
+    # (open dss) get record tsc
+    if dss_file_handle is not None:
+        dss_fm = dss_file_handle
+    else:
+         dss_fm = HecDss.open(dss_file_path)
+    tsc = dss_fm.get(dss_rec,True)
+
+    # new dss rec name
+    if new_dss_rec is not None:
+        dss_rec_out = new_dss_rec
+    else:
+        rec_parts = tsc.fullName.split('/')
+        rec_parts[6] = new_fpart
+        dss_rec_out = '/'.join(rec_parts)    
+
+    # write
+    tsc.fullName = dss_rec_out
+    dss_fm.put(tsc)
+
+    if dss_file_handle is None:
+        dss_fm.close()
+
+def jday_from_tsc(tsc):
+    dtt = hectime_to_datetime(tsc)
+    return [decimal_doy(dt) for dt in dtt]        
+
+
+def decimal_doy(dt):
+    doy = dt.timetuple().tm_yday
+    fractional_day = (dt.hour / 24.0) + (dt.minute / 1440.0) + (dt.second / 86400.0) + (dt.microsecond / 86400000000.0)
+    return doy + fractional_day
+
+
+def organizeLocations(curAlt, location_objs, loc_names, return_dss_paths=False):
+    locations_list = []
+    print('num_locs:',len(location_objs))
+    for name in loc_names:
+        i_loc = findLocationOrder(curAlt,location_objs,name)
+        if return_dss_paths:
+            tspath = str(curAlt.loadTimeSeries(location_objs[i_loc]))
+            tspath = fixInputLocationFpart(curAlt, tspath)
+            locations_list.append(tspath)
+        else:
+            locations_list.append(location_objs[i_loc])
+    return locations_list
+
+
+def organizeLocationsPaired(curAlt, location_objs, loc_names_paired, return_dss_paths=False):   
+    return [organizeLocations(curAlt, location_objs, pn, return_dss_paths) for pn in loc_names_paired]
+
+
+def findLocationOrder(curAlt,location_objs,name):
+    for i,loc in enumerate(location_objs):
+        print(i,'Checking loc: ',loc.getName())
+        if name == loc.getName():
+            return i
+    # if we make it here, our input/output location name was not found
+    curAlt.addComputeMessage("Scripting - Location name not found: "+name)
+    sys.exit(1)
+
 def first_value(dss_file,dss_rec,start_str=None,end_str=None):
     dssFm = HecDss.open(dss_file)        
     if start_str is None and end_str is None:
@@ -25,6 +95,15 @@ def first_value(dss_file,dss_rec,start_str=None,end_str=None):
     dssFm.close()
     return tsc.values[0]
 
+
+def first_value(dss_file,dss_rec,start_str=None,end_str=None):
+    dssFm = HecDss.open(dss_file)        
+    if start_str is None and end_str is None:
+        tsc = dssFm.get(dss_rec,True)
+    else:
+        tsc = dssFm.read(dss_rec,start_str,end_str,False).getData()
+    dssFm.close()
+    return tsc.values[0]
 
 def standardize_interval(tsm, interval, makePerAver=True):
     tsc = tsm.getData()
@@ -69,32 +148,37 @@ def dss_read_ts_safe(dssFilePath,dssRec,start_date=None,end_date=None,returnTSM=
     # this method is going to throw an error if the file doesn't exist
     dss = HecDss.open(dssFilePath,True)
 
-    if not dss.recordExists(dssRec):
-        print('DSS rec does not exist for reading:')
-        print('File: '+dssFilePath)
-        print('Rec: '+dssRec)
-        sys.exit(-1)
-    else:
-        if start_date is None and end_date is None:
-            tsc = dss.get(dssRec,True) # use get with True here to capture entire record, 'read' seems to leave off data randomly
-            if debug:
-                print('Reading DSS in script...')
-                print('    file: '+dssFilePath)
-                print('    record: '+dssRec)
-            if returnTSM:
-                return tsmath(tsc)
-            else:
-                return tsc
-        elif start_date is not None and end_date is not None:
-            tsm = dss.read(dssRec,start_date,end_date,False) # 'read' allows time windows in call, but returns tsm
-            if debug:
-                print('Reading DSS in script between '+start_date+' and ',+end_date)
-                print('    file: '+dssFilePath)
-                print('    record: '+dssRec)
-            if returnTSM:
-                return tsm
-            else:
-                return tsm.getData()
+    # recordExists() seems to check for the individual database "pages" or something, with a date, or
+    # date range, required?  TODO: figure out how to check if a date-agnostic record exists.  Or, don't,
+    # since HECLIB produces a pretty nice error if you try to open a non-existant record.
+    #if not dss.recordExists(dssRec):
+    #    print('DSS rec does not exist for reading:')
+    #    print('File: '+dssFilePath)
+    #    print('Rec: '+dssRec)
+    #    sys.exit(-1)
+    #else:
+    if start_date is None and end_date is None:
+        tsc = dss.get(dssRec,True) # use get with True here to capture entire record, 'read' seems to leave off data randomly
+        dss.close()
+        if debug:
+            print('Reading DSS in script...')
+            print('    file: '+dssFilePath)
+            print('    record: '+dssRec)
+        if returnTSM:
+            return tsmath(tsc)
+        else:
+            return tsc
+    elif start_date is not None and end_date is not None:
+        tsm = dss.read(dssRec,start_date,end_date,False) # 'read' allows time windows in call, but returns tsm
+        dss.close()
+        if debug:
+            print('Reading DSS in script between '+start_date+' and ',+end_date)
+            print('    file: '+dssFilePath)
+            print('    record: '+dssRec)
+        if returnTSM:
+            return tsm
+        else:
+            return tsm.getData()
 
 
 def data_from_dss(dss_file,dss_rec,starttime_str, endtime_str):
@@ -389,15 +473,22 @@ def add_flows(currentAlt, timewindow, inflow_records, dss_file, output_dss_recor
 
 
 def add_or_subtract_flows(currentAlt, timewindow, inflow_records, dss_file, operation,
-                       output_dss_record_name, output_dss_file):
+                       output_dss_record_name, output_dss_file, multiplier=None,
+                       delay_days=0,delay_hours=0):
     # operation: list where True = add, False = subtract, e.g. [True,False,True] to substract the 2nd
     # record from the sun of the first and third records
      
     #cfs_2_acreft = balance_period * 3600. / 43559.9
     #acreft_2_cfs = 1. / cfs_2_acreft
 
+    # sometimes some records don't start until one day or one timestep after the timewindow, so use delays to avoid
+    # having garbage in your output from missing records
     starttime_str = timewindow.getStartTimeString()
+    if delay_days > 0:
+        dt_start = hec_str_time_to_dt(starttime_str) + datetime.timedelta(days=delay_days,hours=delay_hours)
+        starttime_str = dt_start.strftime('%d%b%Y %H%M')          
     endtime_str = timewindow.getEndTimeString()
+
     #01Jan2014 0000
     starttime_hectime = HecTime(starttime_str).value()
     endtime_hectime = HecTime(endtime_str).value()
@@ -406,6 +497,9 @@ def add_or_subtract_flows(currentAlt, timewindow, inflow_records, dss_file, oper
 
     inflows = []
     times = []
+
+    if multiplier is None:
+        multiplier = [1.0 for i in range(len(inflow_records))]
 
     # Read inflows
     print('Reading inflows')
@@ -458,15 +552,23 @@ def add_or_subtract_flows(currentAlt, timewindow, inflow_records, dss_file, oper
             values = convvals
 
         if len(inflows) == 0:
-            inflows = values
+            if multiplier[j] != 1.0:
+                inflows = []
+                for vi, v in enumerate(values):
+                    inflows.append(v * multiplier[j])
+            else:
+                inflows = values
             times = hectimes #TODO: check how this handles missing values
         else:
             if operation[j]:
                 for vi, v in enumerate(values):
-                    inflows[vi] += v
+                    inflows[vi] += v * multiplier[j]
             else:
                 for vi, v in enumerate(values):
-                    inflows[vi] -= v
+                    inflows[vi] -= v * multiplier[j]
+
+
+    dssFm.close()
                     
     # Output record
     tsc = TimeSeriesContainer()
@@ -483,7 +585,6 @@ def add_or_subtract_flows(currentAlt, timewindow, inflow_records, dss_file, oper
     dssFm_out = HecDss.open(output_dss_file)
     dssFm_out.write(tsc)
 
-    dssFm.close()
     dssFm_out.close()
 
 
@@ -589,6 +690,22 @@ def calculate_relative_humidity(air_temp, dewpoint_temp):
     relative_humidity = 100.0 * (numerator / denominator) * math.exp(exponent)
     return max(0.01, min(100.0, relative_humidity))
 
+def calculate_dewpoint(air_temp, relative_humidity):
+    """
+    Calculate Dew Point Temperature given the air temperature and relative humidity,
+    using the algebraic inversion of the simplified August-Roche-Magnus approximation.
+    
+    Parameters:
+        air_temp (float): Air temperature in C.
+        relative_humidity (float): Relative Humidity in percent (0-100).
+    
+    Returns:
+        float: Dew Point Temperature in C.
+    """
+    gamma = math.log(relative_humidity / 100.0) + (17.62 * air_temp) / (243.12 + air_temp)
+    dewpoint = 243.12 * gamma / (17.62 - gamma)
+    return dewpoint
+
 
 def relhum_from_at_dp(met_dss_file, at_path, dp_path):
     dss = HecDss.open(met_dss_file)
@@ -603,6 +720,25 @@ def relhum_from_at_dp(met_dss_file, at_path, dp_path):
     new_pathname = '/'.join(parts)
     tsc.fullName = new_pathname
     tsc.units = '%'
+    print('writing: ', new_pathname)
+    dss.write(tsc)
+    dss.close()
+
+
+def dp_from_at_relhum(met_dss_file, at_path, rh_path):
+    dss = HecDss.open(met_dss_file)
+    tsc = dss.read(at_path).getData()
+    rh_data = data_from_dss(met_dss_file, rh_path, None, None)
+    for i in range(tsc.numberValues):
+        #print('AT:',tsc.values[i], 'RH:',rh_data[i])
+        tsc.values[i] = calculate_dewpoint(tsc.values[i], rh_data[i])
+    parts = tsc.fullName.split('/')
+    parts[2] = parts[2][:5]
+    parts[3] = 'temp-dewpoint'
+    parts[6] = parts[6] + '-DERIVED'
+    new_pathname = '/'.join(parts)
+    tsc.fullName = new_pathname
+    #tsc.units = '%' - units should be C...
     print('writing: ', new_pathname)
     dss.write(tsc)
     dss.close()
