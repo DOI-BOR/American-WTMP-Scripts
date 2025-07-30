@@ -51,8 +51,8 @@ W2FolsomFlowLocs = [ft[0] for ft in W2FolsomFlowTempLocs]
 OutputLocs = [
     'W2_Natoma_InflowQ',
     'W2_Natoma_InflowT',
-    'W2_Folsom_Schedule_Temp',
-    'W2_Folsom_Schedule',
+    'W2_FOLSOM_SCHEDULE_TEMP_FINAL',
+    'W2_FOLSOM_SCHEDULE_FINAL',
     'W2_Folsom_Downstream_Temp'
 ]
 
@@ -79,8 +79,8 @@ def read_str_csv(csv_file_path):
 
     OK, here is the deal.  In W2 forcast mode when bypass is allowed, if bypass is
     needed, W2 essentially turns penstock 1 into the bypass by lowering the intake
-    elevation to 64.01 ft, whle at the same time shunting and re-caldulating powerplant
-    flow so that is goes as additional flow through the remaining two powerhouse 
+    elevation to 64.01 ft, while at the same time shunting and re-calculating powerplant
+    flow so that it goes as additional flow through the remaining two powerhouse 
     penstocks. This means that we need to parse penstock 1 elevations, and identify when it
     reaches ecatly 64.01, and add that flow to the bypass flow. Normally, any bypass flow, which
     must be specified, occurs in column 13 (starting with column 0).
@@ -260,6 +260,47 @@ def write_constant_1day_ts(dssFm,rec,rtw,constant_value):
 
     dssFm.put(tsc)
 
+def nSchedule_from_AutoRunTempLog(model_run_dir_Folsom):
+    # Searches for the last valid ATSP schedule that was reported during the compliance period (May1-Nov30).
+    # file structure:
+    #  JDAY,JDAYG,Temp_outlet,Temp_target,Flow_outlet,Column_#_TTarget,IAUTOC
+    #  77.500,  77,    9.11,  100.00,   90.18,  45,   0,
+    
+    nSchedule = None
+    with open(os.path.join(model_run_dir_Folsom,'AutoRunTempLog.opt'),'r') as fp:
+        for i,line in enumerate(fp.readlines()):
+            if i>0:
+                # the last schedule read in the file is the last (potentially iterative) schedule used May1-Nov30
+                tokens = line.split(',') 
+                if float(tokens[0].strip()) <= 333.0:  # Schedule seems to revert to original on jday 334
+                    nSchedule = int(tokens[5].strip())
+    return nSchedule
+
+
+def nSchedule_from_TEMP_LOG(model_run_dir_Folsom):
+    # NOTE: Deprecated. According to Vanessa, TEMP_LOG.OPT is not reliably parsable to find the last valid scedule, although
+    # it is still unclear what situation would cause it to not be reliable. Instead, we parse and use the last
+    # schedule used in the AutoRunTempLog.opt file.
+    # Searches for the last valid schedule that was loaded during the compliance period, as logged to TEMP_LOG.OPT.
+    nSchedule = None
+    with open(os.path.join(model_run_dir_Folsom,'TEMP_LOG.OPT'),'r') as fp:
+        for line in fp.readlines():
+            # the last schedule read in the file is the last (potentially iterative) schedule used
+            if line.startswith("OPEN FILE:TargetSchedulesA.npt"):
+                print(line)
+                
+                # extract schedule number from line that looks like this: OPEN FILE:TargetSchedulesA.npt   122.000   39    7
+                # where 39 is the schedule  number, 122.0 is the day-of-year
+                tokens = line.split() # split on whitespace
+
+                # sometimes the last schedule read can simply reload the original scheule used for iterative simulations
+                # (because the different scheudules are technicall not defined after 1Dec). We don't want that one, we
+                # want the last one loaded that was used for the schedule period (May through Nov).
+                if float(tokens[2]) < 333.0:  # is load day-of-year < ~30 Nov
+                    nSchedule = int(tokens[3])
+    return nSchedule
+
+
 def computeAlternative(currentAlternative, computeOptions):
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName() )
  
@@ -342,17 +383,9 @@ def computeAlternative(currentAlternative, computeOptions):
     shared_dir = os.path.join(fpp.study_dir_from_run_dir(run_dir),'shared')
     forecast_dss = os.path.join(shared_dir,'WTMP_American_forecast.dss')
     
-    # read TEMP_LOG.OPT and find last schedule used (matching ensemble number if Schedules are loaded in WTMP as target temps)
+    # read AutoRunTempLog.opt and find last schedule used
     # ----------------------------------------------------------------
-    nSchedule = None
-    with open(os.path.join(model_run_dir_Folsom,'TEMP_LOG.OPT'),'r') as fp:
-        for line in fp.readlines():
-            # the last schedule read in the file is the last (potentially iterative) schedule used
-            if line.startswith("OPEN FILE:TargetSchedulesA.npt"):
-                # extract schedule number from line that looks like this: OPEN FILE:TargetSchedulesA.npt   122.000   39    7
-                # where 39 is the schedule  number
-                tokens = line.split() # split on whitespace
-                nSchedule = int(tokens[3])
+    nSchedule = nSchedule_from_AutoRunTempLog(model_run_dir_Folsom)
 
     # write (copy) schedule target temps to output DSS
     # ----------------------------------------------------------------
@@ -372,8 +405,7 @@ def computeAlternative(currentAlternative, computeOptions):
         tsc_sched.units = 'C'    
     dssOut = HecDss.open(dss_file)
 
-    # write schedule number to output DSS
-    # ----------------------------------------------------------------
+    # write schedule temps to output DSS
     sched_parts = tsc_sched.fullName.split('/')
     out_parts = outputpaths[2].split('/')
     out_parts[5] = sched_parts[5] # get period from original record
