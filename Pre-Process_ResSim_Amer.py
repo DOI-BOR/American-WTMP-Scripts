@@ -86,11 +86,17 @@ def computeAlternative(currentAlternative, computeOptions):
                         dss_type='PER-AVER', period='1DAY',cpart='ZEROS',fpart='ZEROS')
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=0.0, what='flow', 
                         dss_type='PER-AVER', period='1HOUR',cpart='ZEROS',fpart='ZEROS')
-    print('Trying to make ELEV-INITIAL-GATE')
-    DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=401.0, what='elev', 
-                        dss_type='PER-AVER', period='1DAY',cpart='ELEV-INITIAL-GATE',fpart='FULL-HEIGHT')
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=0.0, what='evap', 
                         dss_type='PER-AVER', period='1DAY',cpart='ZEROS',fpart='ZEROS')
+    print('Making ELEV-INITIAL-GATE records...')
+    DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=401.0, what='elev', 
+                        dss_type='PER-AVER', period='1DAY',cpart='ELEV-INITIAL-GATE',fpart='FULL-HEIGHT')
+    DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=362.0, what='elev', 
+                        dss_type='PER-AVER', period='1DAY',cpart='ELEV-INITIAL-GATE',fpart='1-OUT')
+    DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=336.0, what='elev', 
+                        dss_type='PER-AVER', period='1DAY',cpart='ELEV-INITIAL-GATE',fpart='2-OUT')
+    DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=307.0, what='elev', 
+                        dss_type='PER-AVER', period='1DAY',cpart='ELEV-INITIAL-GATE',fpart='ALL-OUT')
 
 
     # if this is a non-iterative simulation, put the correct ensemble number into the Folsom.in file 
