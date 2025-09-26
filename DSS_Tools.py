@@ -196,7 +196,12 @@ def hectime_to_datetime(tsc):
     dtt = []
     for j in range(tsc.numberValues):
         # Assuming hectime can be converted to Java Date or has method to get the equivalent
-        java_date = tsc.getHecTime(j).getJavaDate(0)  
+        # Get the year and adjust for the Java offset
+        year = tsc.getHecTime(j).year() - 1900
+        month = tsc.getHecTime(j).month() - 1
+        
+        # Create a new date
+        java_date = Date(year, month, tsc.getHecTime(j).day(), tsc.getHecTime(j).hour(), tsc.getHecTime(j).minute())
         
         # Convert Java Date to Python datetime
         timestamp = (java_date.getTime() / 1000)
