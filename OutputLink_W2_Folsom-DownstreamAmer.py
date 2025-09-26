@@ -136,19 +136,25 @@ def write_shutter_elevations_to_output_dss(str_csv,vol_csv,dss_file,output_tsc):
     and merge it to the output time interval for writing to dss.
     output_tsc is an example, and should have the correct W2 Folsom fpart'''
 
+    # Read the outputs from the W2 csv files
     jday,sElev1,sElev2,sElev3,bypassFlow,revisedPenstock1Flow = read_str_csv(str_csv)
 
+    # Get the output times series data
     jday_output = DSS_Tools.jday_from_tsc(output_tsc)
 
+    # Split the DSS path into parts
     parts = str(output_tsc.fullName).split('/')
     epart = parts[5]
     W2_fpart = parts[6]
 
+    # Open the DSS file for output
     dss_fm = HecDss.open(dss_file)
     output_tsc.units= 'ft'
 
-    jday_output_offset = tz_offset.days # there is a timezone shift on the DSS records currently
+    # Adjust for any timezone offset
+    jday_output_offset = 0
     
+    # Output each of penstock 2, penstock 3, and the leakage terms
     for i,elev in enumerate([sElev1,sElev2,sElev3]):
 
         merged_data = merge_data_nearest_jday(jday_output,jday,elev,jday_output_offset)
@@ -157,29 +163,32 @@ def write_shutter_elevations_to_output_dss(str_csv,vol_csv,dss_file,output_tsc):
         output_tsc.values = merged_data
         dss_fm.put(output_tsc)       
 
-    # write bypass flow also
+    # Reset the units
     output_tsc.units = 'cms'
     
+    # Output the bypass flows
     output_tsc.values = merge_data_nearest_jday(jday_output,jday,bypassFlow,jday_output_offset)
     bflow_name = 'W2_Folsom_Forecast_BypassFlow'
     output_tsc.fullName = '/'.join(['','',bflow_name,'FLOW','',epart,W2_fpart,''])
     dss_fm.put(output_tsc)
     
+    # Output the revised penstock 1 flows
     output_tsc.values = merge_data_nearest_jday(jday_output,jday,revisedPenstock1Flow,jday_output_offset)
     bflow_name = 'W2_Folsom_Forecast_RevisedPenstock1Flow'
     output_tsc.fullName = '/'.join(['','',bflow_name,'FLOW','',epart,W2_fpart,''])    
     dss_fm.put(output_tsc) 
-
-
-    # write storage also
+    
+    # Write storage 
     jday,storage,storage_lt_52,storage_lt_60 = read_storage_csv(vol_csv)
     output_tsc.units= 'ac-ft'
+    
     for name,stor in zip(['W2_Folsom_Storage','W2_Folsom_Storage_lt_52F','W2_Folsom_Storage_lt_60F'],
                          [storage,storage_lt_52,storage_lt_60]):
         output_tsc.values = merge_data_nearest_jday(jday_output,jday,stor,jday_output_offset)        
         output_tsc.fullName = '/'.join(['','',name,'STOR','',epart,W2_fpart,''])
         dss_fm.put(output_tsc)        
-        
+    
+    # Close the DSS file
     dss_fm.close()
     
 
@@ -197,21 +206,30 @@ def merge_data_nearest_jday(jday1, jday2, data2, jd1_offset=0):
         data2_jday1: merged data2 of len(jday1)
     """
 
+    # Create a list to hold the ouput data
     data2_jday1 = []
+    
+    # Loop on the dates of the list to be filled to find the correct interpolation values
     for i, jday1_val in enumerate(jday1):
-        min_diff = 1.0e9  # Initialize with positive infinity
+        # Initialize placeholder values for the nearest date and value
         nearest_jday2_val = None
-        corresponding_T2_val = None
-
+        corresponding_data2_val = None
+        
+        # Loop on the dates of the seccond list to find the first date greater or equal to the target date
         for j, jday2_val in enumerate(jday2):
-            diff = abs(jday1_val+jd1_offset - jday2_val)
-            if diff < min_diff:
-                min_diff = diff
+            # If the target date is less than or equal to the current value, update the value
+            if jday1_val <= jday2_val:
+                # Update the value and date
                 nearest_jday2_val = jday2_val
                 corresponding_data2_val = data2[j]
+                
+                # Break from the loop with the value
+                break
 
+        # Append the value into the output list
         data2_jday1.append(corresponding_data2_val)
-
+    
+    # Return to the calling function
     return data2_jday1
 
     
