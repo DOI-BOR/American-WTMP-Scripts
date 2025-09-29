@@ -791,9 +791,9 @@ def snap_inital_gate_elev_from_folsom_elev(elev_in):
     #elif elev_in >= 346.:  # deganged-middle shutter, not an option we want to supoort here apparently
     #    return 349.0
     elif elev_in >= 320.:
-        return 93.57 # Two-out TODO: verify this
+        return 105.13 
     elif elev_in >= 300.:
-        return 307.0 # All-out TODO: what is this
+        return 93.57
     else:
         return elev_in
 
