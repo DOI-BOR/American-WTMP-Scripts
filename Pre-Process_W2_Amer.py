@@ -62,7 +62,8 @@ def computeAlternative(currentAlternative, computeOptions):
     # divide Nimbus dam flow into 3, for the 3 gated spillways in W2 Natoma model
     fpp.split_nimbus_outflow(forecast_dss,'/AMERICAN RIVER/LAKE NATOMA/FLOW-NIMBUS ACTUAL//1Day/AMER_BC_SCRIPT/')
 
-    # get target temp location from dummy dss file somehow?
+    # get target temp location from dss
+    TT_loc = fpp.get_downstream_loc(forecast_dss)
 
     # load Tair and Folsom FaveFlow
     start_doy = HecTime(starttime_str).dayOfYear() #.value()
@@ -70,7 +71,7 @@ def computeAlternative(currentAlternative, computeOptions):
 
     doys,FaveFlow,Tair = fpp.load_tt_data(forecast_dss, starttime_str, endtime_str) # day-of-year,CMS,C
 
-    target_temp_write = fpp.write_target_temp_npt(year,1,doys,Tair,FaveFlow,schedule_csv,targt_temp_npt_filepath,lagWatt=True)
+    target_temp_write = fpp.write_target_temp_npt(year,TT_loc,doys,Tair,FaveFlow,schedule_csv,targt_temp_npt_filepath,lagWatt=True)
 
     folsom_outlets = fpp.write_qot_7outlets_flows(forecast_dss, starttime_str, endtime_str)
 

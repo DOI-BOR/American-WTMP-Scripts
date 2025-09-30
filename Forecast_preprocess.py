@@ -662,6 +662,14 @@ def load_tt_data(forecast_dss, starttime_str, endtime_str):
     return doys,FaveFlow,Tair
 
 
+def get_downstream_loc(forecastDSS):
+    dssFm = HecDss.open(forecastDSS)        
+    tsc = dssFm.get('//DOWNSTREAM_CONTROL_LOC///INTEGER/AMER_TARGET_TEMP/', True) # this should be passed in a linked record at some point
+    loc = int(str(tsc.getText()).strip())
+    print('Downstream Loc: ',str(tsc),loc)
+    dssFm.close()
+    return loc
+
 def remove_folsom_lower_river_use(forecast_dss,lro_use_rec):
     dssFm = HecDss.open(forecast_dss)
     tsc = dssFm.get(lro_use_rec,True)
@@ -791,9 +799,9 @@ def snap_inital_gate_elev_from_folsom_elev(elev_in):
     #elif elev_in >= 346.:  # deganged-middle shutter, not an option we want to supoort here apparently
     #    return 349.0
     elif elev_in >= 320.:
-        return 105.13 
+        return 105.13  
     elif elev_in >= 300.:
-        return 93.57
+        return 93.57 
     else:
         return elev_in
 
