@@ -121,8 +121,6 @@ def computeAlternative(currentAlternative, computeOptions):
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=307.0, what='elev', 
                         dss_type='PER-AVER', period='1DAY',cpart='ELEV-INITIAL-GATE',fpart='ALL-OUT')
 
-
-    # if this is a non-iterative simulation, put the correct ensemble number into the Folsom.in file 
     if 'nobypass' in model_name.lower():
         print('Setting: Do not use Folsom River Bypass in forecast')
         fpp.remove_folsom_lower_river_use(forecast_dss,"/FOLSOM/LOWER RIVER OUTLET USEAGE/COUNT//1Day/AMER_BC_SCRIPT/")

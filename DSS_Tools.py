@@ -64,13 +64,35 @@ def organizeLocations(curAlt, location_objs, loc_names, return_dss_paths=False):
     print('num_locs:',len(location_objs))
     for name in loc_names:
         i_loc = findLocationOrder(curAlt,location_objs,name)
+        print('name:',name,'i_loc:',i_loc)
         if return_dss_paths:
-            tspath = str(curAlt.loadTimeSeries(location_objs[i_loc]))
-            tspath = fixInputLocationFpart(curAlt, tspath)
+            lo1 = location_objs[i_loc]
+            print(lo1)
+            if lo1.isLinkedToPreviousModel():
+                tspath = str(curAlt.loadTimeSeries(lo1))
+                tspath = fixInputLocationFpart(curAlt, tspath)
+            else:
+                tspath = str(lo1.getDssPath())
+            print(tspath)
             locations_list.append(tspath)
         else:
             locations_list.append(location_objs[i_loc])
     return locations_list
+
+# I tihnk this version is old ... keeping around in case behavior is broken
+#
+#def organizeLocations(curAlt, location_objs, loc_names, return_dss_paths=False):
+#    locations_list = []
+#    print('num_locs:',len(location_objs))
+#    for name in loc_names:
+#        i_loc = findLocationOrder(curAlt,location_objs,name)
+#        if return_dss_paths:
+#            tspath = str(curAlt.loadTimeSeries(location_objs[i_loc]))
+#            tspath = fixInputLocationFpart(curAlt, tspath)
+#            locations_list.append(tspath)
+#        else:
+#            locations_list.append(location_objs[i_loc])
+#    return locations_list
 
 
 def organizeLocationsPaired(curAlt, location_objs, loc_names_paired, return_dss_paths=False):   

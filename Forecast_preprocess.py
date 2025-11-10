@@ -352,31 +352,6 @@ def calc_downstream_temp_W2(year,location,doys,Tair,Tmodel,FaveFlow,lagWatt=Fals
     return dtt,DownstreamTemp
 
 
-
-def update_W2_Folsom_iterative_restart_date(rtw,model_dir):    
-    starttime_str = rtw.getStartTimeString()
-    doy = HecTime(starttime_str).dayOfYear()
-    restart_doy = 120 if doy < 120 else doy + 1 # write restart file either May 1 or start day + 1
-
-    # fileinput should backup and write over file, with inplace=True
-
-    # replace doy in line 403 (index 402) in w2_con.csv
-    w2_con = os.path.join(model_dir,"w2_con.csv")
-    for line in fileinput.input(w2_con, inplace=True):
-        if fileinput.filelineno()==403:
-            print("%i,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"%restart_doy)
-        else:
-            print("%s" % line.rstrip())
-
-    # replace doy in line 4 in folsom_in.npt
-    folsom_in = os.path.join(model_dir,"folsom_in.npt")
-    for line in fileinput.input(folsom_in, inplace=True):
-        if fileinput.filelineno()==4:
-            print("%i,,,,,,,,,,,,,,,,,,"%restart_doy)
-        else:
-            print("%s" % line.rstrip())
-
-
 def update_W2_Folsom_iterative_schedule_number(run_dir,model_dir):
     with open(os.path.join(run_dir,'current_ensemble.txt'),'r') as fp:
         ensemble_number = int(fp.readline().strip())
@@ -686,6 +661,14 @@ def load_tt_data(forecast_dss, starttime_str, endtime_str):
     return doys,FaveFlow,Tair
 
 
+def get_downstream_loc(forecastDSS):
+    dssFm = HecDss.open(forecastDSS)        
+    tsc = dssFm.get('//DOWNSTREAM_CONTROL_LOC///INTEGER/AMER_TARGET_TEMP/', True) # this should be passed in a linked record at some point
+    loc = int(str(tsc.getText()).strip())
+    print('Downstream Loc: ',str(tsc),loc)
+    dssFm.close()
+    return loc
+
 def remove_folsom_lower_river_use(forecast_dss,lro_use_rec):
     dssFm = HecDss.open(forecast_dss)
     tsc = dssFm.get(lro_use_rec,True)
@@ -695,4 +678,156 @@ def remove_folsom_lower_river_use(forecast_dss,lro_use_rec):
     tsc.values = values
     dssFm.write(tsc)
     dssFm.close()
+
+def modify_w2_selective_start_date(rtw,w2_sel_filepath):
+
+    ''' Expecting file of this format, need to change the TEND XXX doy values to 1+start date, and TSTR YYY values to 2+start date
     
+0    $Selective input control file ,,,,,,,,,,,,,,,,,,,
+1	Temperature outlet control - frequency of output for temperature,,,,,,,,,,,,,,,,,,,
+2	OUTFREQ,TFRQTMP,,,,,,,,,,,,,,,,,,
+3	,0.125,,,,,,,,,,,,,,,,,,
+4	Structure outlet control based on time and temperature and branch,,,,,,,,,,,,,,,,,,,
+5	DYNSTR1,CONTROL,NUM,FREQ,Min flow rate m3/s,Max flow rate m3/s,TempCushionoC,RiverOutlet Earliest DATE,Max flow rate river outlet, m3/s,Str# to divide up layers,TempTargetReductionRule2C1,3A,4A,,,,,,,,,
+6	,ON,7,1,0,81.8,0,300,14.15,7,0,,,,,,,,,
+7	,,,,,,,,,,,,,,,,,,,
+8	DYNSTR2,ST/WD,JB,JS/NW,YEARLY,TSTR,TEND,TEMP,NELEV,ELEV1,ELEV2,ELEV3,ELEV4,ELEV5,ELEV6,ELEV7,ELEV8,ELEV9,ELEV10,
+9	1,ST,1,1,ON,32,XXX,-1,4,93.57,105.13,113.05,124.94,,,,,,,
+10	2,ST,1,2,ON,32,XXX,-1,4,93.57,105.13,113.05,124.94,,,,,,,
+11	3,ST,1,3,ON,32,XXX,-1,4,93.57,105.13,113.05,124.94,,,,,,,
+12	4,ST,1,1,ON,YYY,334,0,5,124.94,113.05,105.13,93.57,64.01,,,,,,
+13	5,ST,1,2,ON,YYY,334,0,5,124.94,113.05,105.13,93.57,64.01,,,,,,
+14	6,ST,1,3,ON,YYY,334,0,5,124.94,113.05,105.13,93.57,64.01,,,,,,
+15	7,ST,1,5,ON,60,334,18.3,2,122.2,101,,,,,,,,,
+16	....
+    
+    '''
+    starttime_str = rtw.getStartTimeString()
+    start_doy = HecTime(starttime_str).dayOfYear()
+    start_doy = max(149,start_doy) # default is to set these lines to 150/151
+
+#    w2_sel_orig = "w2_selective_original.npt" # use this copy as a reference version - hope that the plugin does not change our changes
+#    w2_path,w2_sel = os.path.split(w2_sel_filepath)
+#    w2_sel_orig_filepath = os.path.join(w2_path,w2_sel_orig)
+#
+#    if not os.path.exists(w2_sel_orig_filepath):
+#        raise ValueError("read_modify_w2_selective_start_date: cannot find w2_selective_original.npt, cannot change start of auto gate changes")
+#    
+#    with open(w2_sel_filepath,'w') as fp_out:
+#        with open(w2_sel_orig_filepath, 'r') as fp_in:
+#            for i,line in enumerate(fp_in.readlines()):
+#                if i >= 9 and i <= 11:
+#                    tokens = line.split(',')
+#                    tokens[6] = "%i"%(start_doy+1)
+#                    line = ",".join(tokens)
+#                elif i >= 12 and i <=14:
+#                    tokens = line.split(',')
+#                    tokens[5] = "%i"%(start_doy+2)
+#                    line = ",".join(tokens)    			
+#                fp_out.write(line)
+    print('Attempting to modify w2_selective: %s'%w2_sel_filepath)
+    for line in fileinput.input(w2_sel_filepath, inplace=True):
+        lineno = fileinput.filelineno() # 1 index (not python zero index)
+        if lineno >= 10 and lineno <= 12:
+            tokens = line.rstrip().split(',') # need that rstrip()!
+            tokens[6] = "%i"%(start_doy+1)
+            print("%s" % ",".join(tokens))
+        elif lineno >= 13 and lineno <=15:
+            tokens = line.rstrip().split(',') # need that rstrip()!
+            tokens[5] = "%i"%(start_doy+2)
+            print("%s" % ",".join(tokens))
+        else:
+            print("%s" % line.rstrip())
+
+    print("Modifed w2_selective.ntp for Folsom auto gate start after start of doy: %i"%start_doy)
+    return True
+
+
+def update_W2_Folsom_iterative_restart_date_and_shutters(rtw,model_dir,w2_elevs):    
+
+    ''' Swich out these values in w2_con for initial gate settings:
+
+166    93.57,0,0,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+167    93.57,0,0,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+168    93.57,0,0,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+
+    '''
+        
+    starttime_str = rtw.getStartTimeString()
+    doy = HecTime(starttime_str).dayOfYear()
+    restart_doy = 120 if doy < 120 else doy + 1 # write restart file either May 1 or start day + 1
+
+    # fileinput should backup and write over file, with inplace=True
+
+    # replace doy in line 403 (index 402) in w2_con.csv
+    w2_con = os.path.join(model_dir,"w2_con.csv")
+    for line in fileinput.input(w2_con, inplace=True):
+        lineno = fileinput.filelineno() # 1 index (not python zero index)
+        if lineno==403: 
+            print("%i,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,"%restart_doy)
+        elif lineno==166:
+            tokens = line.rstrip().split(',')
+            tokens[0] = str(w2_elevs[0])
+            print("%s" % ",".join(tokens))
+        elif lineno==167:
+            tokens = line.rstrip().split(',')
+            tokens[0] = str(w2_elevs[1])
+            print("%s" % ",".join(tokens))
+        elif lineno==168:
+            tokens = line.rstrip().split(',')
+            tokens[0] = str(w2_elevs[2])
+            print("%s" % ",".join(tokens))        
+        else:
+            print("%s" % line.rstrip())
+
+    # replace doy in line 4 in folsom_in.npt
+    folsom_in = os.path.join(model_dir,"folsom_in.npt")
+    for line in fileinput.input(folsom_in, inplace=True):
+        if fileinput.filelineno()==4:
+            print("%i,,,,,,,,,,,,,,,,,,"%restart_doy)
+        else:
+            print("%s" % line.rstrip())
+
+
+def snap_inital_gate_elev_from_folsom_elev(elev_in):
+    '''mapping ResSim true shutter elevations to W2 (not sure what scale is used) inital shutter elevations'''
+    if elev_in >= 395.:
+        return 124.94 # 401.0 - All-in
+    elif elev_in >= 355.:
+        return 113.05 # 362.0 - One-out
+    #elif elev_in >= 346.:  # deganged-middle shutter, not an option we want to supoort here apparently
+    #    return 349.0
+    elif elev_in >= 320.:
+        return 105.13  
+    elif elev_in >= 300.:
+        return 93.57 
+    else:
+        return elev_in
+
+def get_initial_shutter_positions(rtw, currentAlternative, computeOptions, shutter_objs):
+    '''This function needs to read DSS records with initila forecast gate positions, translate them to the 
+    W2 exact starting shutter height, and write that to the w2_con file.
+    
+	w2_con.csv:
+	Rows 166, 167, and 168 are used to specify the starting gate conditions.  These values needs to be updated 
+	to reflect the gate settings at the start of the simulation.  If all shutters are in, then the value should 
+	be 124.94 for all three rows.  If the top gate is removed, then row 166 should be 113.05, while rows 167 
+	and 168 remain at 124.94.  The default value should be 93.57 (penstocks) for simulations starting before 
+	the temperature management season begins (doy 120).    
+
+    '''
+    starttime_str = rtw.getStartTimeString()
+    endtime_str = rtw.getEndTimeString()
+    doy = HecTime(starttime_str).dayOfYear()
+
+	# W2 Folsom is expecting these defaults before doy 120
+    if doy <= 120:
+        return [93.57,93.57,93.57]
+
+    w2_elevs = []
+    for shutter in shutter_objs:
+        shutter_dss_rec,shutter_dss_filepath = DSS_Tools.getDataLocationDSSInfo(shutter, currentAlternative, computeOptions)
+        shutter_elevs = DSS_Tools.data_from_dss(shutter_dss_filepath,shutter_dss_rec,starttime_str,endtime_str)
+        w2_elevs.append(snap_inital_gate_elev_from_folsom_elev(shutter_elevs[1])) # use first position in case there are issues with start record, as is sometime the case
+
+    return w2_elevs
