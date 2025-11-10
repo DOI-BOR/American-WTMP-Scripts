@@ -6,7 +6,7 @@ from hec.heclib.util import HecTime
 print("Current paths: ", sys.path)
 
 # create list of unwanted folders in sys.path
-search_list = ["SacTrn", "Sacramento", "American"]
+search_list = ["SacTrn", "Sacramento"]
 
 # initialize and search for unwanted paths
 matching_paths = []
