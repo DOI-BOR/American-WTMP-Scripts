@@ -428,6 +428,9 @@ def write_forecast_elevations(currentAlternative, rtw, forecast_dss, shared_dir)
         start_dt = start_dt - dt.timedelta(days=1)
         start_str = start_dt.strftime('%d%b%Y')+ ' 2400'
     end_str = rtw.getEndTimeString()   
+    
+    print('Elevation times', start_str)
+    print('Elevation times', end_str)
 
     currentAlternative.addComputeMessage('Forecast Elevations: '+start_str+' '+end_str)
 
@@ -654,10 +657,8 @@ def load_tt_data(forecast_dss, starttime_str, endtime_str):
         for j in range(tsc_at.numberValues):
             Tair[j] = (Tair[j] - 32.0)* 5.0 / 9.0
     
-    # get doy of year
-    doys = []
-    for j in range(tsc_flow.numberValues):
-        doys.append(tsc_flow.getHecTime(j).dayOfYear())
+    # get doy of year       
+    doys = DSS_Tools.jday_from_tsc(tsc_flow)  
     
     return doys,FaveFlow,Tair
 
@@ -704,7 +705,8 @@ def modify_w2_selective_start_date(rtw,w2_sel_filepath):
     
     '''
     starttime_str = rtw.getStartTimeString()
-    start_doy = HecTime(starttime_str).dayOfYear()
+    start_doy = DSS_Tools.hectime_to_julian(HecTime(starttime_str))
+    
     start_doy = max(149,start_doy) # default is to set these lines to 150/151
 
 #    w2_sel_orig = "w2_selective_original.npt" # use this copy as a reference version - hope that the plugin does not change our changes
@@ -755,7 +757,8 @@ def update_W2_Folsom_iterative_restart_date_and_shutters(rtw,model_dir,w2_elevs)
     '''
         
     starttime_str = rtw.getStartTimeString()
-    doy = HecTime(starttime_str).dayOfYear()
+    doy = DSS_Tools.hectime_to_julian(HecTime(starttime_str))
+    
     restart_doy = 120 if doy < 120 else doy + 1 # write restart file either May 1 or start day + 1
 
     # fileinput should backup and write over file, with inplace=True
@@ -819,7 +822,7 @@ def get_initial_shutter_positions(rtw, currentAlternative, computeOptions, shutt
     '''
     starttime_str = rtw.getStartTimeString()
     endtime_str = rtw.getEndTimeString()
-    doy = HecTime(starttime_str).dayOfYear()
+    doy = DSS_Tools.hectime_to_julian(HecTime(starttime_str))
 
 	# W2 Folsom is expecting these defaults before doy 120
     if doy <= 120:

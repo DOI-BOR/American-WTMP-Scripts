@@ -263,6 +263,11 @@ def read_inflows_outflows(currentAlt, dss_file, inflow_records, outflow_records,
     for i in range(len(inflows[1:])):
         inflow_outflow.append(inflows[i+1] - outflows[i+1])
    # this is in cfs (period avg vals)
+   
+    print('Start str', starttime_str)
+    print('end str', endtime_str)
+    print('start hectime', starttime_hectime)
+    print('end hectime', endtime_hectime)
 
     currentAlt.addComputeMessage("Len inflow_outflow:"+str(len(inflow_outflow)))
     currentAlt.addComputeMessage("Len times:"+str(len(times)))
@@ -292,6 +297,9 @@ def predict_elevation(currentAlt, starttime_str, endtime_str, res_name, inflow_r
 
     times,inflow_outflow = read_inflows_outflows(currentAlt, dss_file, inflow_records, outflow_records, 
                                                  starttime_str, endtime_str, starttime_hectime, endtime_hectime)
+
+    print('start elevation series time:', times[0])
+    print('end elevation series time:', times[-1])
 
     currentAlt.addComputeMessage("Len inflow_outflow:"+str(len(inflow_outflow)))
     currentAlt.addComputeMessage("Len times:"+str(len(times)))
@@ -357,7 +365,6 @@ def create_balance_flows(currentAlt, timewindow, res_name, inflow_records, outfl
 
     starttime_str = timewindow.getStartTimeString()
     endtime_str = timewindow.getEndTimeString()
-    #01Jan2014 0000
 
     # add lookback padding to enable ResSim to have balance flows on 1st timestep
     # starttime_hectime_obj = HecTime(starttime_str).add(lookback_padding)
@@ -365,6 +372,7 @@ def create_balance_flows(currentAlt, timewindow, res_name, inflow_records, outfl
 
     starttime_hectime = HecTime(starttime_str).value()
     endtime_hectime = HecTime(endtime_str).value()
+    
     currentAlt.addComputeMessage('Looking from {0} to {1}'.format(starttime_str, endtime_str))
 
     times,inflow_outflow = read_inflows_outflows(currentAlt, dss_file, inflow_records, outflow_records, 

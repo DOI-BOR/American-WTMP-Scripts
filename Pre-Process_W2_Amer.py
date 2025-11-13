@@ -1,6 +1,7 @@
 import os, sys
 from com.rma.model import Project
 from hec.heclib.util import HecTime
+from java.util import Date
 
 sys.path.append(os.path.join(Project.getCurrentProject().getWorkspacePath(), "scripts"))
 
@@ -66,9 +67,12 @@ def computeAlternative(currentAlternative, computeOptions):
     TT_loc = fpp.get_downstream_loc(forecast_dss)
 
     # load Tair and Folsom FaveFlow
-    start_doy = HecTime(starttime_str).dayOfYear() #.value()
-    endtime_doy = HecTime(endtime_str).dayOfYear() #.value()
-
+    start_date = HecTime(starttime_str) 
+    start_doy = DSS_Tools.hectime_to_julian(start_date) 
+    
+    endtime_date = HecTime(endtime_str)
+    endtime_doy = DSS_Tools.hectime_to_julian(endtime_date)
+    
     doys,FaveFlow,Tair = fpp.load_tt_data(forecast_dss, starttime_str, endtime_str) # day-of-year,CMS,C
 
     target_temp_write = fpp.write_target_temp_npt(year,TT_loc,doys,Tair,FaveFlow,schedule_csv,targt_temp_npt_filepath,lagWatt=True)
