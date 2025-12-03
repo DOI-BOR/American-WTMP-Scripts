@@ -218,13 +218,33 @@ def hectime_to_datetime(tsc):
     dtt = []
     for j in range(tsc.numberValues):
         # Assuming hectime can be converted to Java Date or has method to get the equivalent
-        java_date = tsc.getHecTime(j).getJavaDate(0)  
+        # Get the year and adjust for the Java offset
+        year = tsc.getHecTime(j).year() - 1900
+        month = tsc.getHecTime(j).month() - 1
+        
+        # Create a new date
+        java_date = Date(year, month, tsc.getHecTime(j).day(), tsc.getHecTime(j).hour(), tsc.getHecTime(j).minute())
         
         # Convert Java Date to Python datetime
         timestamp = (java_date.getTime() / 1000)
         dtt.append(datetime.datetime.fromtimestamp(timestamp))
 
     return dtt
+    
+def hectime_to_julian(time_string):
+
+    # Convert the HEC Time to a Java time
+    java_date = Date(time_string.year() - 1900, time_string.month() - 1, time_string.day(), time_string.hour(), time_string.minute())
+    
+    # Convert from the Java date into the python date
+    python_date = datetime.datetime.fromtimestamp(java_date.getTime() / 1000)
+    
+    # Calculate the day of the year
+    doy = decimal_doy(python_date)  
+    
+    # Return to the calling function
+    return doy
+
 
 def fixInputLocationFpart(currentAlternative, tspath):
     new_fpart_start = ':'.join(currentAlternative.getInputFPart().split(':')[:-1])
@@ -665,6 +685,7 @@ def create_constant_dss_rec(currentAlt, timewindow, output_dss_file, constant=0.
     
     starttime_str = timewindow.getStartTimeString()
     endtime_str = timewindow.getEndTimeString()
+    
     #starttime_hectime = HecTime(starttime_str).value()
     #endtime_hectime = HecTime(endtime_str).value()
 
