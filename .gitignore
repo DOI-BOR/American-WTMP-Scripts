@@ -45,6 +45,7 @@ replay_pid*
 # backup files
 *.bak
 **/*.bak
+**/*.bak.*
 
 # Python files
 *.idea
@@ -65,3 +66,19 @@ build/
 
 # compiled Jasper files
 *.jasper
+jasperC/**
+jasperC/
+jasperC/*.jasper
+
+# additional XML files
+*.xml
+!defaultLineStyles.xml
+!Graphics_Defaults.xml
+!Graphics_Defaults_contour.xml
+!Format/*.xml
+!Datasources/USBRAutomatedReportDataAdapter.xml
+
+# created by the reporting
+Images/**
+CSVData/**
+Datasources/USBRAutomatedReportOutput.xml
