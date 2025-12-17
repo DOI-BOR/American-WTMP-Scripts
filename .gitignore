@@ -58,6 +58,7 @@ __pycache__/
 
 # DSS files
 *.dss
+**/*.dss
 
 # pyinstaller files
 dist/
@@ -69,14 +70,6 @@ build/
 jasperC/**
 jasperC/
 jasperC/*.jasper
-
-# additional XML files
-*.xml
-!defaultLineStyles.xml
-!Graphics_Defaults.xml
-!Graphics_Defaults_contour.xml
-!Format/*.xml
-!Datasources/USBRAutomatedReportDataAdapter.xml
 
 # created by the reporting
 Images/**
