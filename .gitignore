@@ -1,8 +1,10 @@
 # Compiled class file
 *.class
+**/*.class
 
 # Log file
 *.log
+**/*.log
 
 # BlueJ files
 *.ctxt
@@ -42,8 +44,24 @@ replay_pid*
 
 # backup files
 *.bak
+**/*.bak
 
-# Pycharm files
+# Python files
 *.idea
 *.pyc
 __pycache__/
+
+# duplicated files
+* - Copy*
+**/* - Copy*
+
+# DSS files
+*.dss
+
+# pyinstaller files
+dist/
+build/
+*.spec
+
+# compiled Jasper files
+*.jasper
