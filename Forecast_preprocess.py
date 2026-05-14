@@ -15,6 +15,28 @@ from com.rma.io import DssFileManagerImpl
 from com.rma.model import Project
 #import hec.hecmath.TimeSeriesMath as tsmath
 
+# create list of unwanted folders in sys.path
+search_list = ["SacTrn", "Sacramento", "American", "Stanislaus"]
+
+# initialize and search for unwanted paths
+matching_paths = []
+for p in sys.path:
+    if any(phrase in p for phrase in search_list):
+        matching_paths.append(p)
+
+# print paths containing unwanted phrases
+print("Paths to be removed:")
+for path in matching_paths:
+    print(path)
+
+# remove matching paths from sys.path
+for path in matching_paths:
+    if path in sys.path:
+        sys.path.remove(path)
+
+# append path
+sys.path.append(os.path.join(Project.getCurrentProject().getWorkspacePath(), "scripts"))
+
 import DSS_Tools
 reload(DSS_Tools)
 
@@ -427,9 +449,6 @@ def write_forecast_elevations(currentAlternative, rtw, forecast_dss, shared_dir)
         start_dt = start_dt - dt.timedelta(days=1)
         start_str = start_dt.strftime('%d%b%Y')+ ' 2400'
     end_str = rtw.getEndTimeString()   
-    
-    print('Elevation times', start_str)
-    print('Elevation times', end_str)
 
     currentAlternative.addComputeMessage('Forecast Elevations: '+start_str+' '+end_str)
 
