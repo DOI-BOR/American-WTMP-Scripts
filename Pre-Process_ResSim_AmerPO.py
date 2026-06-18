@@ -52,13 +52,17 @@ reload(DMS_preprocess)
 
 
 def computeAlternative(currentAlternative, computeOptions):
+    # Log the start of computation for this scripting alternative.
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName())
     currentAlternative.addComputeMessage('\n')
 
+    # Run preprocessing for the American ResSim workflow.
     data_preprocess = DMS_preprocess.preprocess_ResSim_American(currentAlternative, computeOptions)
 
+    # Run accumulated depletion computation for the same workflow.
     acc_dep = Acc_Dep_ResSim_American.computeAlternative(currentAlternative, computeOptions)
 
+    # Return success only if both preprocessing and accumulated depletion complete successfully.
     if data_preprocess and acc_dep:
         return True
 

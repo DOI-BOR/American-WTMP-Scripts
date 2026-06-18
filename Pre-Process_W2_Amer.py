@@ -43,9 +43,12 @@ reload(cbfj)
 shutter_links = ['init_elev_shutter_1','init_elev_shutter_2','init_elev_shutter_3']
 
 def computeAlternative(currentAlternative, computeOptions):
+    
+    # Log the start of computation for this scripting alternative.
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName())
     currentAlternative.addComputeMessage('\n')
 
+    # Read the runtime window and extract the start/end times and forecast year.
     rtw = computeOptions.getRunTimeWindow()
     starttime_str = rtw.getStartTimeString()
     endtime_str = rtw.getEndTimeString()
@@ -54,100 +57,106 @@ def computeAlternative(currentAlternative, computeOptions):
     
     ### Determine the alternative name ###
     # This step is necessary to set the model up correctly based on American configurations
-    # Get the current folder
+    # Get the current watershed run directory.
     study_root = computeOptions.getRunDirectory()  # returns watershed directory
     
-    # Split the path and strip off the scripts, alternative-group, and run folder to obtain the WAT directory
+    # Strip off the scripts, alternative-group, and run folder to get the study root.
     study_main = study_root.split(os.sep)
     study_main = os.sep.join(study_main[:-3])
     
-    # Create the directory to the WAT simulation group
+    # Build the path to the WAT simulation group directory.
     study_wat = study_main + os.sep + 'wat' + os.sep + 'simGroups'
     
-    # Get the contents of the directory
+    # List all simulation group files.
     all_groups = os.listdir(study_wat)
     
-    # Filter to only forecast groups
+    # Keep only forecast simulation groups.
     forecast_groups = [x for x in all_groups if ".fsimgrp" in x]
     
-    # Remove backup files not caught by the previous filter
+    # Exclude backup files that still match the simulation-group extension.
     forecast_groups = [x for x in forecast_groups if '.bak' not in x]
     
-    # Strip off the file extensions from each name
+    # Remove the file extension so only group names remain.
     forecast_groups = [x.split(".fsimgrp")[0] for x in forecast_groups]
     
-    # Sort by the list decreasing
+    # Sort descending so later-named groups are checked first.
     forecast_groups.sort(reverse=True)
     
-    # Get the simulation name which is in alternative-simulation group format separated by a dash
+    # Get the simulation name, expected in alternative-group format.
     sim_name = computeOptions.getSimulationName()
     
-    # Loop and find the what forecast group is within the simulation name
+    # Find which forecast group name appears inside the simulation name.
     for group_name in forecast_groups:
-        # Check if the group name is in the simulation name
+        
+        # Once a matching group is found, stop searching.
         if group_name in sim_name:
+            
             # Valid group name component has been found. Break to continue processing 
             break
     
-    # Remove the group from the simulation name
+    # Remove the group suffix from the simulation name to isolate the alternative name.
     alt_name = sim_name.split(group_name)[0]
     
-    # Remove the dash from the alternative name
+    # Remove the trailing dash from the alternative name.
     alt_name = alt_name[:-1]
     
-    # Construct the new simulation name that is the disk name
+    # Construct a disk-friendly simulation name using underscores.
     alt_name_underscore = alt_name.replace(' ', '_')
     sim_name_underscore = alt_name_underscore + '-' + group_name
 
     ### Adjust the model name based on the alternative name ###
-    # Get the current run directory
+    # Get the current run directory.
     run_dir = computeOptions.getRunDirectory()
 
     # Start with the base model name. This is an assumed convention. 
     model_name = "W2 Folsom"  # base Folsom forecast model (iterative w/ bypass)
     
-    # Check the alternative if the model needs adjustment for the fixed ATSP mode
+    # Append the FixedATSP suffix when that mode is encoded in the alternative name.
     if "FixedATSP" in alt_name:
+        
         # FixedATSP is found in the alternative name. Append it to the run directory
         model_name += " FixedATSP"
     
     # Check the alternative if the model needs adjustment for the no bypass mode
     if "NoBypass" in alt_name:
+        
         # NoBypass is found in the alternative name. Append it to the run directory
         model_name += " NoBypass"
     
     ### Setup the paths ###
+    # Build model and shared-data file paths used by the forecast workflow.
     model_dir = os.path.join(study_main, 'cequal-w2', 'Folsom', model_name)
     targt_temp_npt_filepath = os.path.join(model_dir,'TargetSchedulesA.npt') # overwrite what's there    
     shared_dir = os.path.join(study_main,'shared')
     forecast_dss = os.path.join(shared_dir,'WTMP_American_forecast.dss')
     schedule_csv = os.path.join(model_dir,'SchedulesA.csv')
 
-    # forecast met data potentially has some weird units
+    # Normalize forecast meteorological DSS data in case units/types are inconsistent.
     DMS_preprocess.fix_DMS_types_units(forecast_dss)
 
-    # convert Folsom storage to monthly elevation
+    # Convert monthly Folsom storage to elevation using the storage-area lookup file.
     elev_stor_area = cbfj.read_elev_storage_area_file(os.path.join(shared_dir, 'AMR_scratch_Folsom.csv'), 'Folsom')
     fpp.storage_to_elev('Folsom',elev_stor_area,forecast_dss,'//FOLSOM/STORAGE//1Month/AMER_BC_SCRIPT/',conic=False)
 
     # invent Natoma elevation record from folsom storage rec
     fpp.invent_elevation('Natoma',forecast_dss,'//FOLSOM/STORAGE//1Month/AMER_BC_SCRIPT/',123.0)
 
-    # predict daily elevation, in case of start on arbitrary day
+    # Predict daily elevations so the model can start on an arbitrary day.
     fpp.write_forecast_elevations(currentAlternative, rtw, forecast_dss, shared_dir)
 
-    # flow balance: subtract muni/pump flow from total release to get flow through dam
+    # Adjust release accounting so flow through the dam excludes municipal/pump flow.
     fpp.subtract_muni_pump(forecast_dss)
     
-    # flow balance: split evap for W2
+    # Split evaporation terms into the format expected by the W2 model.
     fpp.split_folsom_evap(forecast_dss,'/AMERICAN RIVER/FOLSOM LAKE/FLOW-ACC-DEP//1Day/AMER_BC_SCRIPT/')
 
-    # divide Nimbus dam flow into 3, for the 3 gated spillways in W2 Natoma model
+    # Split Nimbus dam flow into three gate-specific series for the Natoma W2 model.
     fpp.split_nimbus_outflow(forecast_dss,'/AMERICAN RIVER/LAKE NATOMA/FLOW-NIMBUS ACTUAL//1Day/AMER_BC_SCRIPT/')
 
-    # get target temp location from dss
+    # Get the downstream target temperature location from DSS.
     TT_loc = fpp.get_downstream_loc(forecast_dss)
 
+    # Build time values and load target-temperature driver data.
     # load Tair and Folsom FaveFlow
     start_date = HecTime(starttime_str) 
     start_doy = DSS_Tools.hectime_to_julian(start_date) 
@@ -156,11 +165,14 @@ def computeAlternative(currentAlternative, computeOptions):
     endtime_doy = DSS_Tools.hectime_to_julian(endtime_date)
     
     doys,FaveFlow,Tair = fpp.load_tt_data(forecast_dss, starttime_str, endtime_str) # day-of-year,CMS,C
-
+    
+    # Write the target temperature schedule file used by the W2 model.
     target_temp_write = fpp.write_target_temp_npt(year,TT_loc,doys,Tair,FaveFlow,schedule_csv,targt_temp_npt_filepath,lagWatt=True)
 
+    # Generate flow time series for the seven Folsom outlets.
     folsom_outlets = fpp.write_qot_7outlets_flows(forecast_dss, starttime_str, endtime_str)
 
+    # Create small constant DSS records used for linking or default values.
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=0.001, what='flow', 
                         dss_type='PER-AVER', period='1DAY',cpart='TinyFlow',fpart='TinyFlow')
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=0.001, what='flow', 
@@ -171,6 +183,8 @@ def computeAlternative(currentAlternative, computeOptions):
                         dss_type='PER-AVER', period='1DAY',cpart='ZEROS',fpart='ZEROS')
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=0.0, what='flow', 
                         dss_type='PER-AVER', period='1HOUR',cpart='ZEROS',fpart='ZEROS')
+    
+    # Create constant gate elevation thresholds used by the outlet/gate logic.
     print('Making ELEV-INITIAL-GATE records...')
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=401.0, what='elev', 
                         dss_type='PER-AVER', period='1DAY',cpart='ELEV-INITIAL-GATE',fpart='FULL-HEIGHT')
@@ -181,25 +195,30 @@ def computeAlternative(currentAlternative, computeOptions):
     DSS_Tools.create_constant_dss_rec(currentAlternative, rtw, forecast_dss, constant=307.0, what='elev', 
                         dss_type='PER-AVER', period='1DAY',cpart='ELEV-INITIAL-GATE',fpart='ALL-OUT')
 
+    # Find configured shutter input locations and derive initial shutter elevations.
     # find initial shutter elevations
     locations_obj = currentAlternative.getInputDataLocations()
     shutter_objs = DSS_Tools.organizeLocations(currentAlternative, locations_obj, shutter_links, return_dss_paths=False)
     w2_elevs = fpp.get_initial_shutter_positions(rtw, currentAlternative, computeOptions, shutter_objs)
     print('Initial W2 shutter elevs:',w2_elevs)
 
+    # Update W2 restart/control files with the restart date and initial shutter elevations.
     # update W2 interative control files for restart date - wait this functionality is already in the w2 plugin - did you check to see if folsom iterative compute option is checked??
     # also update the inital gate elevations in the w2_con file
     fpp.update_W2_Folsom_iterative_restart_date_and_shutters(rtw,model_dir,w2_elevs)
 
+    # Update the schedule guess/ensemble selection used by the W2 run.
     # if this is a non-iterative simulation, put the correct ensemble number into the 'Set Guess' file 
     #if 'FixedATSP' in model_name:
     # -- edit, 2025-01-27, B. Saenz.  We want to set the  correct ensemble for all runs, as it also
-    # tells the iterative version of Folsom W2 to start with a parituclar schedule, to save time if you have a good guess
+    # tells the iterative version of Folsom W2 to start with a parituclar schedule, to save time if you have a good guess    w2run_base,_ = os.path.split(run_dir)
     w2run_base,_ = os.path.split(run_dir)
     fpp.update_W2_Folsom_iterative_schedule_number(w2run_base,model_dir)
 
+    # Adjust the selective withdrawal file so auto shutter logic works from the chosen start date.
     # The W2 selective file must be modified depending on the start gate to get the auto shutter to work correctly
     fpp.modify_w2_selective_start_date(rtw,os.path.join(model_dir,'w2_selective.npt'))
 
+    # Return success only if both target temperature writing and outlet generation succeeded.
     if target_temp_write and folsom_outlets:
         return True
