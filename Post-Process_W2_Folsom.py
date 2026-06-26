@@ -13,228 +13,388 @@ reload(DSS_Tools)
 import Forecast_preprocess as fpp
 reload(fpp)
 
-# NOTE: As of 2025-02 this script/model alternative is unused. For W2_Folsom - only models, this script have been
-# replaced by theoutput link sciprt for folsom for consistency. -ben saenz
-
+# NOTE: As of 2025-02 this script/model alternative is unused.
+#
+# Historical Context
+# ------------------
+# This script originally provided post-processing for standalone
+# W2_Folsom forecast alternatives.
+#
+# It has since been replaced by the Folsom output-link script so that
+# all Folsom workflows use a consistent post-processing pathway.
+#
+# Maintenance Guidance
+# --------------------
+# Before modifying this script, verify whether any legacy forecast
+# configurations still reference it. The primary production workflow
+# may no longer execute this code.
+#
+# Original note:
+# "For W2_Folsom-only models, this script has been replaced by the
+# output link script for Folsom for consistency."
 
 ##
 #
-# computeAlternative function is called when the ScriptingAlternative is computed.
+# computeAlternative function is called when the ScriptingAlternative
+# is computed by HEC-WAT.
+#
 # Arguments:
-#   currentAlternative - the ScriptingAlternative. hec2.wat.plugin.java.impl.scripting.model.ScriptPluginAlt
-#   computeOptions     - the compute options.  hec.wat.model.ComputeOptions
 #
-# return True if the script was successful, False if not.
-# no explicit return will be treated as a successful return
+#   currentAlternative
+#       ScriptingAlternative object.
+#       hec2.wat.plugin.java.impl.scripting.model.ScriptPluginAlt
+#
+#   computeOptions
+#       Compute configuration object.
+#       hec.wat.model.ComputeOptions
+#
+# Return:
+#
+#   True
+#       Successful execution.
+#
+#   False
+#       Failure.
+#
+# Notes:
+#
+#   No explicit return value is treated as success by HEC-WAT.
+#
+# Purpose
+# -------
+#
+# This script:
+#
+#   1. Identifies the final W2 schedule used during model execution.
+#   2. Writes schedule target temperatures to DSS.
+#   3. Writes active schedule number to DSS.
+#   4. Generates downstream temperature regression outputs.
+#
+# These products are primarily forecast diagnostics rather than
+# direct model outputs.
 #
 ##
+
+
 def computeAlternative(currentAlternative, computeOptions):
+    
+    #######################################################################
+    # Script initialization
+    #######################################################################
+
+    # Record execution in the HEC-WAT compute log.
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName() )
 
+    #######################################################################
+    # Runtime configuration
+    #
+    # These values define the forecast period and output DSS file.
+    #######################################################################
+
+    # Forecast runtime window.
     rtw = computeOptions.getRunTimeWindow()
+    
+    # DSS output file for the current simulation.
     dss_file = computeOptions.getDssFilename()
+    
+    # Runtime start and end timestamps.
     starttime_str = rtw.getStartTimeString()
     endtime_str = rtw.getEndTimeString()
+    
+    # Extract forecast year.
+    #
+    # Schedule libraries often contain historical years and must later
+    # be aligned with the current forecast year.
     startyear_str = starttime_str[5:9]
     year = int(startyear_str)
 
-    ### Determine the alternative name ###
-    # This step is necessary to set the model up correctly based on American configurations
-    # Get the current folder
+    #######################################################################
+    # Determine alternative name and simulation group
+    #
+    # Forecast directory structures are derived from simulation names.
+    #
+    # HEC-WAT simulation names typically follow:
+    #
+    #     <AlternativeName>-<ForecastGroup>
+    #
+    # This section reconstructs both components.
+    #######################################################################
+    
+    # Run directory provided by HEC-WAT.
     study_root = computeOptions.getRunDirectory()  # returns watershed directory
     
-    # Split the path and strip off the scripts, alternative-group, and run folder to obtain the WAT directory
+    # Remove run-specific folders and obtain study root
     study_main = study_root.split(os.sep)
     study_main = os.sep.join(study_main[:-3])
     
-    # Create the directory to the WAT simulation group
+    # Simulation group definition directory.
     study_wat = study_main + os.sep + 'wat' + os.sep + 'simGroups'
     
-    # Get the contents of the directory
+    # Read available simulation groups.
     all_groups = os.listdir(study_wat)
     
-    # Filter to only forecast groups
+    # Retain forecast groups only.
     forecast_groups = [x for x in all_groups if ".fsimgrp" in x]
     
-    # Remove backup files not caught by the previous filter
+    # Ignore backup files.
     forecast_groups = [x for x in forecast_groups if '.bak' not in x]
     
-    # Strip off the file extensions from each name
+    # Remove filename extension.
     forecast_groups = [x.split(".fsimgrp")[0] for x in forecast_groups]
     
-    # Sort by the list decreasing
+    # Reverse sorting favors newer forecast groups.
     forecast_groups.sort(reverse=True)
     
-    # Get the simulation name which is in alternative-simulation group format separated by a dash
+    # Simulation name supplied by HEC-WAT.
     sim_name = computeOptions.getSimulationName()
     
-    # Loop and find the what forecast group is within the simulation name
+    #######################################################################
+    # Identify forecast group
+    #
+    # Assumes forecast group name appears within simulation name.
+    #######################################################################
+    
     for group_name in forecast_groups:
+        
         # Check if the group name is in the simulation name
         if group_name in sim_name:
+            
             # Valid group name component has been found. Break to continue processing 
             break
     
-    # Remove the group from the simulation name
+    # Remove simulation group suffix.
     alt_name = sim_name.split(group_name)[0]
     
-    # Remove the dash from the alternative name
+    # Remove trailing separator
     alt_name = alt_name[:-1]
     
-    # Construct the new simulation name that is the disk name
+    # Convert to directory naming convention.
     alt_name_underscore = alt_name.replace(' ', '_')
+    
+    # Construct run-directory simulation name.
     sim_name_underscore = alt_name_underscore + '-' + group_name
 
-    ### Adjust the model name based on the alternative name ###
-    # Get the current run directory
+    #######################################################################
+    # Determine CE-QUAL-W2 model variant
+    #
+    # Alternative naming conventions control model selection.
+    #######################################################################
+
+    # Current run directory.
     run_dir = computeOptions.getRunDirectory()
 
-    # Start with the base model name. This is an assumed convention. 
+    # Default model.
     model_name = "W2 Folsom"  # base Folsom forecast model (iterative w/ bypass)
     
-    # Check the alternative if the model needs adjustment for the fixed ATSP mode
+    # Fixed ATSP variant.
     if "FixedATSP" in alt_name:
+        
         # FixedATSP is found in the alternative name. Append it to the run directory
         model_name += " FixedATSP"
     
     # Check the alternative if the model needs adjustment for the no bypass mode
     if "NoBypass" in alt_name:
+        
         # NoBypass is found in the alternative name. Append it to the run directory
         model_name += " NoBypass"
     
-    ### Setup the paths ###
+    #######################################################################
+    # Construct model file locations
+    #
+    # Expected directory structure:
+    #
+    # runs/
+    #   <simulation>/
+    #     CeQual-W2/
+    #       Folsom/
+    #         <model_name>/
+    #######################################################################
+    
     model_dir = os.path.join(study_main, 'runs', sim_name_underscore, 'CeQual-W2', 'Folsom', model_name)
+    
+    # Historical target schedule file.
+    #
+    # Note:
+    # This variable is not used later in the script but documents the
+    # expected model schedule location.
     targt_temp_npt_filepath = os.path.join(model_dir,'TargetSchedulesA.npt') # overwrite what's there    
+    
+    # Shared forecast resources.
     shared_dir = os.path.join(study_main,'shared')
+    
+    # Forecast DSS containing meteorological inputs.
     forecast_dss = os.path.join(shared_dir,'WTMP_American_forecast.dss')
+    
+    # CSV schedule export generated by model workflows.
     schedule_csv = os.path.join(model_dir,'SchedulesA.csv')
-
+    
+    # Load the input DSS locations for the current alternative.
     locations = currentAlternative.getInputDataLocations() # should be only one, W2 Folsom outflow temp
+    
+    # Convert the first input time series location to a string path.
     locations_path = str(currentAlternative.loadTimeSeries(locations[0]))
 
     print('locations_path:')
     print(locations_path)
 
-    # get W2 Folsom F-part from input locations    
+    # Extract the F-part from the W2 Folsom input DSS path.
+    # DSS pathname parts are slash-delimited; index 6 is the F-part.    
     W2_fpart = locations_path.split('/')[6]
 
-    # get scripted output locations
+    # Get the scripted output DSS locations for the current alternative.
     outputlocations = currentAlternative.getOutputDataLocations()
     outputpaths = []
+    
+    # Create output time series records and normalize their F-parts.
     for ol in outputlocations:
         opath = currentAlternative.createOutputTimeSeries(ol)
         tspath = str(opath).split('/')
         fpart = tspath[6]
-    #    new_fpart = fpart.lower().split(':scripting-')[0] #fpart will have scripting in it, but we want w2 version
-    #    new_fpart += ':cequalw2-' #replace scripting with W2
-    #    new_fpart += '-'.join(computeOptions.getSimulationName().split('-')[:-1]) #sim name will have the sim group, so snip that
+   
+        # If the F-part contains a pipe, keep only the portion after it.
         if '|' in fpart:
+            
             # remove everything before | including |
             tspath[6] = fpart[fpart.find('|')+1:]
-        #tspath[6] = 'W2_Folsom'
+        
+        # Reassemble the cleaned pathname and save it.
         outputpaths.append('/'.join(tspath))
         
-    # read TEMP_LOG.OPT and find last schedule used (matching ensemble number if Schedules are loaded in WTMP as target temps)
+    # Read TEMP_LOG.OPT to determine the last schedule number used.
+    # This matches the final iterative schedule loaded by the model.
     nSchedule = None
     with open(os.path.join(model_dir,'TEMP_LOG.OPT'),'r') as fp:
         for line in fp.readlines():
-            # the last schedule read in the file is the last (potentially iterative) schedule used
+            
+            # The last matching line in the file is the last schedule applied.
             if line.startswith("OPEN FILE:TargetSchedulesA.npt"):
                 # extract schedule number from line that looks like this: OPEN FILE:TargetSchedulesA.npt   122.000   39    7
                 # where 39 is the schedule  number
+                # Split the log line on whitespace and parse the schedule number.
                 tokens = line.split() # split on whitespace
                 nSchedule = int(tokens[3])
 
-    # write (copy) schedule target temps to output DSS
+    # Build the DSS record path for the selected target temperature schedule.
     schedule_rec = "/WTMP_American/Folsom Iterative Target/TEMP-WATER//1Day/C:0000"+ "%02i"%nSchedule +"|ScheduleA/"
+    
+    # Open the schedule DSS file and retrieve the matching time series.
     dssIn = HecDss.open(os.path.join(shared_dir,"ScheduleA_TT_daily.dss"))
     tsc_sched = dssIn.get(schedule_rec,True)
     dssIn.close()
 
-    # need to line up schedule with run time window ... hmm use doy of start date and find nearest date? Read the TT in output dss for dates?
+    # Align the schedule dates with the model run year before writing.
+    # This avoids silent DSS write failures due to date mismatches.
     tsc_sched = rectify_tsc_dates_to_model_year(tsc_sched,year)
-    # convert to C just so we don't go crazy using DSS
+    
+    # Convert schedule temperatures from Fahrenheit to Celsius if needed.
     if tsc_sched.units == 'F':
         tc = []
         for tf in tsc_sched.values:
             tc.append((tf-32.)*5.0/9.0)
         tsc_sched.values = tc
-        tsc_sched.units = 'C'    
+        tsc_sched.units = 'C' 
+
+    # Open the model output DSS file for writing.
     dssOut = HecDss.open(dss_file)
 
-    # write schedule number to output DSS
+    # Update the schedule record pathname to match the output location.
+    # Preserve the original period part from the schedule record.
     sched_parts = tsc_sched.fullName.split('/')
     out_parts = outputpaths[0].split('/')
     out_parts[5] = sched_parts[5] # get period from original record
     tsc_sched.fullName = '/'.join(out_parts)
-    #tsc_sched.numberValues = len(tsc_sched.values)
-    #tsc_sched.setStoreAsDoubles(True)
+    
     print('writing W2 Schedule Target Temps: ')
     print('    '+dss_file)
     print('    '+tsc_sched.fullName)
     
-    #print(tsc_sched.values)
-    #print(len(tsc_sched.values))
+    # Write the schedule target temperature series to the output DSS.
     dssOut.put(tsc_sched)  # TODO:  Why does this never show up in output file???
     
-    # use above tsc to write constant nSchedule to dss, I guess
+    # Write a constant time series carrying the selected schedule number.
+    # Reuse the run time window and second output path.
     print('writing W2 Schedule Number: '+outputpaths[1])
     print('    '+dss_file)
     print('    '+outputpaths[1])
     write_constant_1day_ts(dssOut,outputpaths[1],rtw,nSchedule)
     
 
-    # back calc dowstream temp using W2 regressions
+    # Back-calculate downstream temperature using W2 regression methods.
     currentAlternative.addComputeMessage("Back-calculating downstream temperature using W2 regressions...")
+    
+    # Load forecast day-of-year, average flow, and air temperature inputs.
     doys,FaveFlow,Tair = fpp.load_tt_data(forecast_dss, starttime_str, endtime_str) # day-of-year,CMS,C    
-    #TModel_tsm = DSS_Tools.dss_read_ts_safe(forecast_dss,dssRec,starttime_str,endtime_str)
+    
+    # Load the model output temperature time series from the input location.
     TModel_tsc = currentAlternative.loadTimeSeries(locations[0])
     TModel_tsm = tsmath(TModel_tsc)
+    
+    # Standardize the model temperature series to a daily interval.
     TModel_tsc_daily = DSS_Tools.standardize_interval(TModel_tsm,'1day').getData()
+    
+    # Compute downstream temperatures using the W2 regression routine.
     dtt,DownstreamTemp = fpp.calc_downstream_temp_W2(year,1,doys,Tair,TModel_tsc_daily.values,FaveFlow,lagWatt=False)
 
+    # Prepare the downstream temperature output pathname with a 1Day interval.
     out_parts = outputpaths[2].split('/')
     out_parts[5] = '1Day'
+    
+    # Replace the daily model temperatures with the computed downstream values.
     TModel_tsc_daily.fullName = '/'.join(out_parts)
     print('writing W2 Downstream Regression calc: '+TModel_tsc_daily.fullName)
-    #print(DownstreamTemp)
+    
+    # Replace the daily model temperatures with the computed downstream values.
     TModel_tsc_daily.values = DownstreamTemp
     print('    '+dss_file)
     print('    '+TModel_tsc_daily.fullName)
+    
+    # Write the downstream regression results and close the DSS file.
     dssOut.put(TModel_tsc_daily)
     dssOut.close()
     
+    # Indicate successful completion of the workflow.
     return True
 
 
 def rectify_tsc_dates_to_model_year(tsc,model_year):
-    '''If you mess up these dates, the DSS write fails silently, and may mess up future writes while the file is open!
     '''
+    If you mess up these dates, the DSS write fails silently, and may mess up future writes 
+    while the file is open!
+    '''
+    
+    # Convert the model year to a string for date replacement.
     ystr = str(model_year)
 
+    # Collect updated HEC times matching the model year.
     new_hec_times = []
     for j in range(tsc.numberValues):
+        # Read each timestamp as a formatted date string from the time series.
         # Assuming hectime can be converted to Java Date or has method to get the equivalent
         date_str = tsc.getHecTime(j).dateAndTime()  # NOT 05Jan2010 0000, actually '5 January 2010, 24:00'
-        #print(date_str)
-        #date_str = date_str[:5]+ystr+date_str[9:]
+        
+        # Replace the year portion while preserving month, day, and time.
         date_str = date_str[:-11] + ystr + date_str[-7:]
         print(date_str)
         new_hec_times.append(HecTime(date_str).value())
-
+    
+    # Overwrite the time series timestamps and update the start time.
     tsc.times = new_hec_times
     tsc.startTime = new_hec_times[0]
-
+    
+    # Return the modified time series container.
     return tsc
 
 def write_constant_1day_ts(dssFm,rec,rtw,constant_value):
+    
+    # Get the run window start time string from the runtime window object.
     starttime_str = rtw.getStartTimeString()
-    #endtime_str = timewindow.getEndTimeString()
 
+    # Convert the start time to HEC time and create 24 hourly timestamps.
     st = HecTime(starttime_str).value()
     times = [st+60*i for i in range(24)]
     values = [constant_value for i in range(24)]
     
+    # Create a DSS time series container for the constant output series.
     tsc = TimeSeriesContainer()
     tsc.startTime = st
     tsc.times = times
@@ -244,10 +404,13 @@ def write_constant_1day_ts(dssFm,rec,rtw,constant_value):
     tsc.interval = 60
     tsc.numberValues = len(values)
     tsc.fullName = rec
+    
+    # Populate pathname metadata fields from the DSS record string.
     rec_parts = rec.split('/')
     tsc.location = rec_parts[2]
     tsc.parameter = rec_parts[3]
     tsc.version = rec_parts[6]
 
+    # Write the constant time series to the DSS file manager.
     dssFm.put(tsc)
     
