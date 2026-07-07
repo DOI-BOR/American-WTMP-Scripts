@@ -115,7 +115,7 @@ def fix_DMS_types_units(dss_file):
                     tsc.fullName = '/'.join(rec_parts)
                     tsc.units = 'deg'
                     
-                    # Convert rad → deg
+                    # Convert rad to deg
                     for i in range(len(tsc.values)) :
                         tsc.values[i] = tsc.values[i] / (2*3.141592653589793) * 360.0
                     
@@ -133,7 +133,7 @@ def fix_DMS_types_units(dss_file):
                     tsc.fullName = '/'.join(rec_parts)
                     tsc.units = 'radians'
                     
-                    # Convert deg → rad
+                    # Convert deg to rad
                     for i in range(len(tsc.values)) :
                         tsc.values[i] = tsc.values[i] / 360.0 * (2*3.141592653589793)
                     
@@ -149,7 +149,7 @@ def fix_DMS_types_units(dss_file):
                     # convert to m/s 
                     tsc.units = 'm/s'
                     
-                    # Convert kph → m/s
+                    # Convert kph to m/s
                     for i in range(len(tsc.values)) :
                         tsc.values[i] = tsc.values[i] / 3.6
                     
@@ -160,7 +160,7 @@ def fix_DMS_types_units(dss_file):
                     # Write updated record back to DSS
                     dss.write(tsc)
                     
-                # Convert fractional cloud values (fract → FRAC + tenths copy)
+                # Convert fractional cloud values (fract to FRAC + tenths copy)
                 if units == 'fract':
                     # save off a copy of cloud record in 0-1 for ResSim, with proper naming, reset orignial to tenths
                     original_fullName = tsc.fullName
@@ -222,7 +222,7 @@ def fix_DMS_types_units_old(dss_file):
             # Fix units if they are known problematic types
             if tsm.getUnits().lower() in units_need_fixing:
                 
-                # Convert tenths → FRAC copy
+                # Convert tenths to FRAC copy
                 if tsm.getUnits() == 'tenths':
                     # save off a copy of cloud record in 0-1 for ResSim
                     tsc = tsm.getData()
@@ -236,7 +236,7 @@ def fix_DMS_types_units_old(dss_file):
                         
                     dss.write(tsc)
                     
-                # Convert radians → degrees copy
+                # Convert radians to degrees copy
                 if tsm.getUnits() == 'radians':
                     # save off a copy in deg
                     tsc = tsm.getData()
@@ -268,7 +268,7 @@ def fix_DMS_types_units_old(dss_file):
                     
                     dss.write(tsc)
 
-                # Convert degrees → radians copy
+                # Convert degrees to radians copy
                 if tsm.getUnits() == 'deg':
                     # save off a copy in redians
                     tsc = tsm.getData()
@@ -282,7 +282,7 @@ def fix_DMS_types_units_old(dss_file):
                         
                     dss.write(tsc)
                     
-                # Convert kph → m/s    
+                # Convert kph to m/s    
                 if tsm.getUnits() == 'kph':
                     # convert to m/s 
                     tsc = tsm.getData()
@@ -346,7 +346,7 @@ def standardize_bc_temp_water_to_C(dss_file,output_dss_file):
             tsc.fullName = '/'.join(rec_parts)
             tsc.units = 'C'
             
-            # Convert Fahrenheit → Celsius if needed            
+            # Convert Fahrenheit to Celsius if needed            
             if incoming_units == 'f' or incoming_units == 'degf':                
                 for i in range(len(tsc.values)) :
                     tsc.values[i] = (tsc.values[i] - 32.0)*5.0/9.0             
@@ -749,7 +749,7 @@ def calc_folsom_inflow_temps(currentAlt, rtw, hydro_dss, met_dss_file, output_ds
         output_period = '1Day'
 
     # hardcoded paths ... yuck
-    # Override paths with shared American_inflows_6 DSS—ensures consistent sources
+    # Override paths with shared American_inflows_6 DSS ensures consistent sources
     shared_path,_ = os.path.split(hydro_dss)
     American_inflows_6 = os.path.join(shared_path,'American_inflows_6.dss')
     NF = '::'.join([American_inflows_6,'/11427000/NF AMERICAN/FLOW//1HOUR/USGS-CARDNO-FROM-DAILY/'])
@@ -758,7 +758,7 @@ def calc_folsom_inflow_temps(currentAlt, rtw, hydro_dss, met_dss_file, output_ds
     AT = '::'.join([met_dss_file,'/MR Am.-Natoma Lake/Fair Oaks-Air Temp/Temp-Air//1hour/251.40.53.1.1/'])
     output_period = '1Hour'
 
-    # Read inputs from DSS; convert units as needed (air temp F→C, flow cfs→cms)
+    # Read inputs from DSS; convert units as needed (air temp FtoC, flow cfstocms)
     print('Reading inflows')
     inputs = []
     
@@ -913,7 +913,7 @@ def compute_folsom_flows(currentAlternative, rtw, hydro_dss, output_dss_file):
     # EID outflow - do we need to normalize to daily?
     # /MR Am.-Folsom Lake-EID Folsom Diversion-Diversion Flow/Flow/ --?
 
-    # Sum upper-elevation river outlet releases (G1–G4), then enforce minimum
+    # Sum upper-elevation river outlet releases (G1 to G4), then enforce minimum
     out_rec = '/MR Am.-Folsom Lake/Upper_River_Outlets_Sum_min4/Flow//1Hour/ResSim_PreProcess/'
     outflow_records = ['/MR Am.-Folsom Lake/FOL-Outlet Release G1/Flow//1Hour/250.3.125.23.1/',
                        '/MR Am.-Folsom Lake/FOL-Outlet Release G2/Flow//1Hour/250.3.125.24.1/',
@@ -922,7 +922,7 @@ def compute_folsom_flows(currentAlternative, rtw, hydro_dss, output_dss_file):
     DSS_Tools.add_flows(currentAlternative, rtw, outflow_records, hydro_dss, out_rec, output_dss_file)
     DSS_Tools.min_ts(output_dss_file, out_rec, 4.0, output_dss_file, 'ResSim_PreProcess')
 
-    # Sum lower-elevation river outlet releases (G5–G8), then enforce minimum
+    # Sum lower-elevation river outlet releases (G5 to G8), then enforce minimum
     out_rec = '/MR Am.-Folsom Lake/Lower_River_Outlets_Sum_min4/Flow//1Hour/ResSim_PreProcess/'
     outflow_records = ['/MR Am.-Folsom Lake/FOL-Outlet Release G5/Flow//1Hour/250.3.125.27.1/',
                        '/MR Am.-Folsom Lake/FOL-Outlet Release G6/Flow//1Hour/250.3.125.28.1/',
