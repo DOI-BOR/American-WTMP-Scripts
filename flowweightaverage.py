@@ -313,7 +313,7 @@ def FWA(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=No
         dss_data[dspi]['temp'] = TempTS.values
 
 
-    # Compute flow × temperature products for each DSS pair   
+    # Compute flow x temperature products for each DSS pair   
     for dspi in dss_data.keys():
         
         flowtemps = []
@@ -490,7 +490,7 @@ def FWA_Daily(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_li
         tempunits = TempTS.units
         dss_data[dspi]['temp'] = TempTS.values
         
-        # Compute pointwise flow × temperature products
+        # Compute pointwise flow x temperature products
         flowtemps = []
         total_flows = []
         offset = 0
@@ -617,7 +617,7 @@ def FWA_Daily(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_li
 # SIMPLE TEMPERATURE CONVERSION UTILITY
 def F_to_C(t,is_in_F):
     
-    # Convert Fahrenheit → Celsius if needed
+    # Convert Fahrenheit to Celsius if needed
     if is_in_F:
         return (t-32.)*5./9.
     

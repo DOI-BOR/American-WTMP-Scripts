@@ -164,8 +164,8 @@ def read_storage_csv(csv_file_path):
     Returns:
       - Julian day
       - Total reservoir storage
-      - Storage below 52°F
-      - Storage below 60°F
+      - Storage below 52F
+      - Storage below 60F
 
     Units are converted from cubic meters to acre-feet because
     downstream plotting and DSS workflows expect acre-feet.
@@ -205,8 +205,8 @@ def write_shutter_elevations_to_output_dss(str_csv,vol_csv,dss_file,output_tsc):
       - Bypass flow
       - Revised Penstock 1 flow
       - Reservoir storage
-      - Storage below 52°F
-      - Storage below 60°F
+      - Storage below 52F
+      - Storage below 60F
 
     output_tsc is used as a template container for DSS writes and
     provides the appropriate W2 forecast F-part.
@@ -395,7 +395,7 @@ def write_constant_1day_ts(dssFm,rec,rtw,constant_value):
 def nSchedule_from_AutoRunTempLog(model_run_dir_Folsom):
     '''
     Reads AutoRunTempLog.opt and returns the last valid ATSP
-    schedule used during the compliance season (May 1–Nov 30).
+    schedule used during the compliance season (May 1 to Nov 30).
 
     File format:
         JDAY,JDAYG,Temp_outlet,Temp_target,

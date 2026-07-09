@@ -444,7 +444,7 @@ def predict_elevation(currentAlt, starttime_str, endtime_str, res_name, inflow_r
     # Step through each timestep of net inflow.
     for i in range(len(inflow_outflow)):
         
-        # Update storage using net flow (CFS → acre-feet conversion).
+        # Update storage using net flow (CFS to acre-feet conversion).
         storage.append( storage[-1] + inflow_outflow[i]*cfs_2_acreft )
         
         # Convert updated storage back to elevation using inverse lookup.
@@ -561,7 +561,7 @@ def create_balance_flows(currentAlt, timewindow, res_name, inflow_records, outfl
     # Unit conversion factors 
     ####################################################################
     
-    # Convert CFS over timestep → acre-feet.
+    # Convert CFS over timestep to acre-feet.
     cfs_2_acreft = balance_period * 3600. / 43559.9
     
     # Convert acre-feet back to CFS-equivalent.
@@ -696,7 +696,7 @@ def create_balance_flows(currentAlt, timewindow, res_name, inflow_records, outfl
             # Identify layer index for interpolation.
             idx1 = get_elev_layer_idx(elev_stor_area['elev'], stage_start, elev_stor_area)
             
-            # Convert elevation → storage using conic method.
+            # Convert elevation to storage using conic method.
             storage_start = conic_storage_interp(stage_start, elev_stor_area['elev'], elev_stor_area['area'], conic_storage, idx1)
             idx2 = get_elev_layer_idx(elev_stor_area['elev'], stage_end, elev_stor_area)
             storage_end = conic_storage_interp(stage_end, elev_stor_area['elev'], elev_stor_area['area'], conic_storage, idx2)
@@ -723,7 +723,7 @@ def create_balance_flows(currentAlt, timewindow, res_name, inflow_records, outfl
         area_avg = 0.5 * (linear_interpolation(elev_stor_area['elev'], elev_stor_area['area'], stage_start) +
                           linear_interpolation(elev_stor_area['elev'], elev_stor_area['area'], stage_end))
         
-        # Convert evaporation depth → volumetric flow loss.
+        # Convert evaporation depth to volumetric flow loss.
         evap_flow_loss = (evap[k] * area_avg) * acreft_2_cfs  # in cfs
 
         ################################################################ 

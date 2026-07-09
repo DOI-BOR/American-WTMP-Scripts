@@ -108,7 +108,7 @@ def interp(x, xp, fp, left=None, right=None):
         # linear interpolation between points         
         else:
             
-            # Search segment where xp[i] ≤ x ≤ xp[i+1]
+            # Search segment where xp[i] <= x <= xp[i+1]
             for i in range(len(xp) - 1):
                 if x >= xp[i] and x <= xp[i+1]:
                     # Perform the linear interpolation
@@ -313,7 +313,7 @@ def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_te
         mon = date.month
         dayofyear = date.timetuple().tm_yday
 
-        # Only compute targets for months May–Nov        
+        # Only compute targets for months May to Nov        
         if mon > 4 and mon < 12:          
             lag = 0
             
@@ -325,7 +325,7 @@ def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_te
             # apply lagged date shift 
             dateLag = date + dt.timedelta(days=lag)
 
-            # Convert lagged month into schedule index (May=1 → Nov=7)
+            # Convert lagged month into schedule index (May=1 to Nov=7)
             mlag = dateLag.month - 4  # index to schedule list above, accounting for lag date and jday as first index
             mlag = min(mlag,7)
             
@@ -344,7 +344,7 @@ def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_te
                 # FORTRAN: ReleaseTemp(k,i)=(-((TTarg(month(k),i)-32)/1.8)+int(m)+x1(m)*aveTair(k)+x3(m)*log10(FaveFlow(k)))/(-x2(m))                
                 # JYTHON:               (-1.0*((sched[mlag]-32.0)/1.8)+cf0[d] + cf1[d]*Tair[ilag] + cf3[d]*math.log10(FaveFlow[ilag]))/(-1.0*cf2[d])
 
-                # Convert schedule target temp from F→C
+                # Convert schedule target temp from FtoC
                 target_T = (float(sched[mlag]) - 32.0) / 1.8 
 
                 # Forward regression formula (Folsom release temperature)
@@ -366,7 +366,7 @@ def write_target_temp_npt(year,location,doys,Tair,FaveFlow,schedule_csv,targt_te
         
         else:
             
-            # Outside May–Nov: fill with -99 placeholders
+            # Outside May to Nov: fill with -99 placeholders
             d = dayofyear - 1
             ReleaseTemp.append([dayofyear]+n99_line)
             ReleaseTemp_debug.append([dayofyear]+n99_line+[dayofyear,-99.0,-99.0,cf0[d],cf1[d],cf2[d],cf3[d]])
@@ -571,7 +571,7 @@ def write_forecast_elevations(currentAlternative, rtw, forecast_dss, shared_dir)
     # Load elevation-storage lookup table
     elev_stor_area = cbfj.read_elev_storage_area_file(os.path.join(shared_dir, 'AMR_scratch_Folsom.csv'), 'Folsom')
 
-    # Convert monthly and daily storage → elevation
+    # Convert monthly and daily storage to elevation
     storage_to_elev('Folsom',elev_stor_area,forecast_dss,'//FOLSOM/STORAGE//1Month/AMER_BC_SCRIPT/',conic=False)
     storage_to_elev('Folsom',elev_stor_area,forecast_dss,'/AMERICAN RIVER/FOLSOM LAKE/STORAGE-CVP//1Day/AMER_BC_SCRIPT/',conic=False)
     
@@ -633,7 +633,7 @@ def split_nimbus_outflow(forecast_dss,nimbus_outflow_rec):
     dssFm = HecDss.open(forecast_dss)
     tsc_outflow = dssFm.get(nimbus_outflow_rec,True)
     
-    # Convert units from CFS → CMS if needed
+    # Convert units from CFS to CMS if needed
     cfs2cms = 1.0/35.314666213 if tsc_outflow.units.lower() == 'cfs' else 1.0   # need CMS
 
     # Define constants for hatchery flow and maximum gate capacity
@@ -645,7 +645,7 @@ def split_nimbus_outflow(forecast_dss,nimbus_outflow_rec):
     spill_flow = []
     gated_spill_flow = []
       
-    # Loop over each day’s outflow value and allocate to components
+    # Loop over each day's outflow value and allocate to components
     for vi, v in enumerate(tsc_outflow.values):
         
         # subtract hatchery demand from total flow
@@ -865,7 +865,7 @@ def load_tt_data(forecast_dss, starttime_str, endtime_str):
     tsm_at = dssFmRec.read('/MR Am.-Natoma Lake/Fair Oaks/Temp-Air//1Hour/251.40.53.1.1/', starttime_str, endtime_str)
     dssFmRec.close()
 
-    # Convert hourly air temp → daily average
+    # Convert hourly air temp to daily average
     tsc_flow = tsm_flow.getData()
     tsc_at = DSS_Tools.standardize_interval(tsm_at,'1day').getData()
 
@@ -876,7 +876,7 @@ def load_tt_data(forecast_dss, starttime_str, endtime_str):
         for j in range(tsc_flow.numberValues):
             FaveFlow[j] = FaveFlow[j] / 35.314666213
 
-    # Convert air temp F → C if needed
+    # Convert air temp F to C if needed
     Tair = tsc_at.values
     
     # Convert air temperature from Fahrenheit to Celsius if needed
@@ -958,13 +958,13 @@ def modify_w2_selective_start_date(rtw,w2_sel_filepath):
     for line in fileinput.input(w2_sel_filepath, inplace=True):
         lineno = fileinput.filelineno() # 1 index (not python zero index)
         
-        # Lines 10–12: Modify TEND field (index 6)
+        # Lines 10 to 12: Modify TEND field (index 6)
         if lineno >= 10 and lineno <= 12:
             tokens = line.rstrip().split(',') # need that rstrip()!
             tokens[6] = "%i"%(start_doy+1)
             print("%s" % ",".join(tokens))
         
-        # Lines 13–15: Modify TSTR field (index 5)
+        # Lines 13 to 15: Modify TSTR field (index 5)
         elif lineno >= 13 and lineno <=15:
             tokens = line.rstrip().split(',') # need that rstrip()!
             tokens[5] = "%i"%(start_doy+2)
