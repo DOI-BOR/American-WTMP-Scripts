@@ -20,6 +20,43 @@ reload(fpp)
 W2_Folsom_linked_rec = 'W2_Folsom_link' # only used for get f part, could be any W2 output
 
 def computeAlternative(currentAlternative, computeOptions):
+    """
+    Entry point for the WAT scripting alternative compute that copies DSS records
+    from the scripting alternative F-part to the CE-QUAL-W2 Folsom model F-part,
+    enabling those records to appear alongside native W2 outputs in plotting tools.
+
+    Workflow:
+      1. Determines the simulation year, alternative name, and W2 model variant
+         (base iterative, FixedATSP, or NoBypass) from the simulation name and
+         the forecast group directory, following the same naming convention used
+         by the W2 Folsom scripting alternatives.
+      2. Constructs paths to the W2 model directory, target temperature .npt file,
+         shared forecast DSS, and schedule CSV (these are resolved but not directly
+         used in the copy operation; they are available for future extension).
+      3. Iterates over all configured input data locations:
+           - The location named 'W2_Folsom_link' is treated as a reference record
+             whose F-part identifies the target W2 model alternative F-part.
+           - All other input locations are collected for copying.
+      4. Copies each non-reference input record to the forecast DSS file under
+         the W2 Folsom F-part using DSS_Tools.copy_dss_ts.
+
+    The copy operation uses the W2 F-part extracted from the 'W2_Folsom_link'
+    location. Any input DSS record (e.g., from ResSim or scripting alternatives)
+    can be copied this way, provided its record name does not already exist under
+    the W2 F-part to overwriting is possible but considered unlikely in practice.
+
+    Inputs:
+      currentAlternative -- WAT scripting alternative object providing input data
+                            locations, compute messages, and time-series loading
+      computeOptions     -- WAT compute options object providing the DSS filename,
+                            run time window, run directory, and simulation name
+
+    Output:
+      Returns True on successful completion.
+      Writes one copy of each non-reference input DSS record to the forecast DSS
+      file under the W2 Folsom model alternative F-part.
+    """
+    
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName() )
 
     rtw = computeOptions.getRunTimeWindow()

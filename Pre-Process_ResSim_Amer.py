@@ -42,6 +42,64 @@ reload(cbfj)
 
 
 def computeAlternative(currentAlternative, computeOptions):
+    """
+    Entry point for the WAT scripting alternative compute that pre-processes
+    forecast DSS inputs for the American River HEC-ResSim Folsom model.
+
+    This script prepares all input DSS records needed before ResSim executes,
+    including elevation forecasts, flow disaggregation, equilibrium temperature,
+    resampled hourly inputs, constant placeholder records, and gate configuration
+    records. Optionally disables the lower river bypass outlet when the NoBypass
+    model variant is selected.
+
+    Workflow:
+      1. Determines the forecast year and model variant (base ResSim or NoBypass)
+         from the run directory name.
+      2. Normalizes data types and units in the forecast DSS file via
+         DMS_preprocess.fix_DMS_types_units.
+      3. Computes and writes forecast reservoir elevations for Folsom and Natoma
+         using fpp.write_forecast_elevations (mass-balance from starting elevation
+         and inflow/outflow records).
+      4. Subtracts municipal pumping from total Folsom release to produce the
+         net downstream release via fpp.subtract_muni_pump.
+      5. Computes Folsom outlet flow components (penstock, leakage, spill) for
+         the 7-outlet model via fpp.write_qot_7outlets_flows.
+      6. Computes the hourly equilibrium water surface temperature at Fair Oaks
+         from air temperature, cloud cover, wind speed, solar irradiance, and
+         dewpoint temperature via fpp.eq_temp.
+      7. Resamples daily forecast inputs (pumping, NF/SF inflows, evaporation)
+         to hourly resolution using DSS_Tools.resample_dss_ts.
+      8. Writes constant DSS placeholder records for flow (2 CFS, 0 CFS),
+         water temperature (10 deg C), evaporation (0), and gate elevation
+         thresholds used by the selective withdrawal outlet logic.
+      9. When the NoBypass variant is active, disables the lower river outlet
+         usage record by overwriting it with -1.0 via
+         fpp.remove_folsom_lower_river_use.
+
+    Inputs:
+      currentAlternative -- WAT scripting alternative object providing compute
+                            messages and context
+      computeOptions     -- WAT compute options object providing the run time
+                            window, run directory, and simulation name
+
+    Output:
+      Returns True on successful completion.
+      Writes the following categories of DSS records to the shared forecast DSS
+      file (WTMP_American_forecast.dss):
+        - Forecast reservoir elevations (Folsom monthly, daily, and predicted;
+          Natoma constant 123.0 ft)
+        - Daily Folsom release resampled to hourly
+        - Net Folsom release to Natoma (total minus pumping)
+        - Folsom outlet flow components (penstock, leakage, spill; CMS)
+        - Hourly equilibrium temperature at Fair Oaks (deg C, INST-VAL);
+          also resampled to daily and weekly
+        - Hourly resampled pumping, NF/SF inflows, and evaporation records
+        - Constant placeholder records: 2 CFS (tiny flow), 0 CFS (zeros),
+          10 deg C (TENS), 0 evap (ZEROS)
+        - Gate elevation constant records: 401 ft (FULL-HEIGHT), 362 ft (1-OUT),
+          336 ft (2-OUT), 307 ft (ALL-OUT)
+        - Lower river outlet usage set to -1.0 (NoBypass variant only)
+    """
     
     # Log the start of the computation for this alternative.
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName())

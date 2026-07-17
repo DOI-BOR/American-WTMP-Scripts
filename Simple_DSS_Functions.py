@@ -7,6 +7,37 @@ from hec.heclib.util.Heclib import UNDEFINED_DOUBLE
 import hec.hecmath.TimeSeriesMath as tsmath
 
 def add_DSS_Data(currentAlt, dssFile, timewindow, input_data, output_path):
+    """
+    Sum multiple DSS time-series records and write the result to a new path.
+    Opens a DSS file, reads each time-series path listed in
+    ``input_data`` over the given time window, accumulates them
+    element-by-element into a single aggregated series, and writes
+    the combined result back to the same DSS file under
+    ``output_path``.
+    Parameters
+    ----------
+    currentAlt : Alternative object
+        The current scripting alternative.  Used for logging via
+        ``.addComputeMessage()``.
+    dssFile : str
+        File path to the HEC-DSS file that contains the input
+        records and will receive the output record.
+    timewindow : TimeWindow object
+        Run time window that defines the period of interest.
+        Exposes ``.getStartTimeString()``, ``.getEndTimeString()``,
+        ``.getStartTime()``, and ``.getEndTime()``.
+    input_data : list of str
+        List of fully qualified DSS pathname strings to read and
+        sum (e.g. ``['//LOC1/FLOW//1Day/TAG/',
+        '//LOC2/FLOW//1Day/TAG/']``).
+    output_path : str
+        Fully qualified DSS pathname where the aggregated time
+        series will be written.
+    Returns
+    -------
+    status : int
+        Always 0, indicating completion.
+    """
     
     # Get the time window strings for the DSS read operation.
     starttime_str = timewindow.getStartTimeString()
@@ -61,12 +92,43 @@ def add_DSS_Data(currentAlt, dssFile, timewindow, input_data, output_path):
     return 0
 
 def resample_dss_ts(inputDSSFile, inputRec, timewindow, outputDSSFile, newPeriod):
-    '''
-    Can upsample an even period DSS timeseries, e.g. go from 1DAY -> 1HOUR, or downsample.  However, hecmath likes to
-    clip of days that don't have the complete 24 hour cycle.  So, we pad here, but there is a chance we ask for data not
-    available. The read gives garbage data and doens't complain.  
-    TODO: fiugre out how to check for bounds for non-midnight start and end times.
-    '''
+    """
+    Resample a regular-interval DSS time series to a new period.
+    Reads a single DSS record, pads the time window to full-day
+    boundaries (midnight-to-midnight) to prevent HecMath from
+    clipping incomplete days, transforms the series to the
+    requested period using period-average interpolation, and writes
+    the resampled result to an output DSS file.
+    Supports both upsampling (e.g. 1Day to 1Hour) and downsampling
+    (e.g. 1Hour to 1Day).  Because the time window is padded, the
+    function assumes the source DSS record contains data that
+    covers the padded range; if it does not, the read may return
+    undefined values without raising an error.
+    Parameters
+    ----------
+    inputDSSFile : str
+        File path to the HEC-DSS file containing the source record.
+    inputRec : str
+        Fully qualified DSS pathname of the record to resample
+        (e.g. ``'//LOC/FLOW//1Day/TAG/'``).
+    timewindow : TimeWindow object
+        Run time window that defines the period of interest.
+        Exposes ``.getStartTimeString()`` and
+        ``.getEndTimeString()``.  Both are padded internally to
+        midnight boundaries before reading.
+    outputDSSFile : str
+        File path to the HEC-DSS file where the resampled record
+        will be written.  May be the same as ``inputDSSFile``.
+    newPeriod : str
+        Target time-step string recognized by HecMath's
+        ``transformTimeSeries`` (e.g. ``'1Hour'``, ``'1Day'``,
+        ``'1Month'``).
+    Returns
+    -------
+    None
+        The resampled series is written to ``outputDSSFile`` as a
+        side effect.  No explicit value is returned.
+    """
     
     # Open the input DSS file and get the original time window.
     dssFm = HecDss.open(inputDSSFile)

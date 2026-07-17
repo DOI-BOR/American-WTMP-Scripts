@@ -19,6 +19,29 @@ from hec.heclib.util import HecTime
 
 def copy_dss_ts(dss_rec,new_fpart=None,new_dss_rec=None,
                 dss_file_path=None,dss_file_handle=None):
+    """
+    Copies a DSS time-series record to a new DSS pathname, either by replacing
+    only the F-part of the existing pathname or by assigning a fully specified
+    new pathname.
+
+    Accepts either an open DSS file handle or a file path string. If a file path
+    is provided, the function opens and closes the file itself. If a handle is
+    provided, it is used directly and left open after the call.
+
+    Inputs:
+      dss_rec         -- DSS pathname string of the source record to copy
+      new_fpart       -- string; replacement F-part for the output record pathname
+                         (used when new_dss_rec is not provided)
+      new_dss_rec     -- string; complete DSS pathname for the output record
+                         (takes precedence over new_fpart when both are provided)
+      dss_file_path   -- full path to the DSS file (used when dss_file_handle is None)
+      dss_file_handle -- open HecDss file handle (used instead of dss_file_path when provided)
+
+    Output:
+      No return value. Writes the copied record to the DSS file under the new pathname.
+      Raises ValueError if neither a file path nor a handle is supplied, or if neither
+      a new F-part nor a complete new pathname is supplied.
+    """                
 
     # Validate that a DSS source has been supplied.
     # Either a file path or an already-open DSS handle is required.
@@ -64,6 +87,20 @@ def copy_dss_ts(dss_rec,new_fpart=None,new_dss_rec=None,
         dss_fm.close()
 
 def jday_from_tsc(tsc):
+    """
+    Converts the HEC timestamps in a TimeSeriesContainer to a list of decimal
+    day-of-year (Julian day) values.
+
+    Internally converts HEC integer times to Python datetime objects via
+    hectime_to_datetime, then applies decimal_doy to each.
+
+    Inputs:
+      tsc -- HEC TimeSeriesContainer object containing a populated time axis
+
+    Output:
+      Returns a list of floats, one per time step, representing the decimal
+      day-of-year (e.g., noon on Jan 1 = 1.5).
+    """
     
     # Convert DSS HEC times into Python datetime objects.
     dtt = hectime_to_datetime(tsc)
@@ -73,6 +110,19 @@ def jday_from_tsc(tsc):
 
 
 def decimal_doy(dt):
+    """
+    Computes the decimal day-of-year for a given Python datetime object.
+
+    The integer day-of-year (1 = Jan 1) is combined with the fractional portion
+    of the day derived from the hour, minute, second, and microsecond components.
+
+    Inputs:
+      dt -- Python datetime object
+
+    Output:
+      Returns a float representing the decimal day-of-year
+      (e.g., 1.0 = midnight Jan 1, 1.5 = noon Jan 1, 32.0 = midnight Feb 1).
+    """
     
     # Extract integer day-of-year from the datetime object.
     doy = dt.timetuple().tm_yday
@@ -85,6 +135,31 @@ def decimal_doy(dt):
 
 
 def organizeLocations(curAlt, location_objs, loc_names, return_dss_paths=False):
+    """
+    Returns a list of WAT data location objects (or their DSS path strings)
+    ordered according to the sequence of names specified in loc_names.
+
+    For each name in loc_names, the matching location is found in location_objs
+    using findLocationOrder. Computation is aborted via sys.exit if any requested
+    name is not found.
+
+    When return_dss_paths is True, the function resolves each location to its
+    DSS pathname string, handling both model-linked locations (via loadTimeSeries
+    and fixInputLocationFpart) and externally linked locations (via getDssPath).
+
+    Inputs:
+      curAlt           -- WAT scripting alternative object for logging and resolving
+                          linked time-series paths
+      location_objs    -- list of WAT DataLocation objects available in this alternative
+      loc_names        -- list of strings; the location names to extract, in the desired order
+      return_dss_paths -- if True, return DSS pathname strings instead of location objects
+                          (default False)
+
+    Output:
+      Returns a list of WAT DataLocation objects or DSS pathname strings,
+      ordered to match loc_names. Length equals len(loc_names).
+      Calls sys.exit(1) if any requested location name is not found.
+    """
     
     # Initialize output list that will contain ordered locations or DSS paths
     locations_list = []
@@ -151,6 +226,27 @@ def organizeLocations(curAlt, location_objs, loc_names, return_dss_paths=False):
 
 
 def organizeLocationsPaired(curAlt, location_objs, loc_names_paired, return_dss_paths=False):   
+    """
+    Applies organizeLocations to each group of location names in a paired (nested)
+    list, returning a list of ordered location lists or DSS path lists.
+
+    Useful when locations must be organized into multiple independent groups
+    (e.g., paired inflow/outflow sets) that each need to be ordered separately.
+
+    Inputs:
+      curAlt            -- WAT scripting alternative object passed through to organizeLocations
+      location_objs     -- list of WAT DataLocation objects available in this alternative
+      loc_names_paired  -- list of lists of strings; each inner list is a group of location
+                           names to organize independently
+      return_dss_paths  -- if True, return DSS pathname strings instead of location objects
+                           (default False); passed through to organizeLocations
+
+    Output:
+      Returns a list of lists, one per group in loc_names_paired. Each inner list contains
+      WAT DataLocation objects or DSS pathname strings ordered to match the corresponding
+      inner list in loc_names_paired.
+      Calls sys.exit(1) via organizeLocations if any requested location name is not found.
+    """
     
     # Apply organizeLocations to each group of paired location names
     return [organizeLocations(curAlt, location_objs, pn, return_dss_paths) for pn in loc_names_paired]
@@ -173,7 +269,23 @@ def findLocationOrder(curAlt,location_objs,name):
     sys.exit(1)
 
 def first_value(dss_file,dss_rec,start_str=None,end_str=None):
-    
+    """
+    Searches a list of WAT DataLocation objects for one matching a given name
+    and returns its index.
+
+    Performs a linear scan through location_objs, comparing each location's name
+    to the requested name. Logs an error and calls sys.exit(1) if the name is
+    not found, because a missing location is a fatal configuration error.
+
+    Inputs:
+      curAlt        -- WAT scripting alternative object used for logging error messages
+      location_objs -- list of WAT DataLocation objects to search
+      name          -- string; the location name to find
+
+    Output:
+      Returns the integer index of the matching location in location_objs.
+      Calls sys.exit(1) if no matching location is found.
+    """
     # Open the DSS file for reading
     dssFm = HecDss.open(dss_file)  
 
@@ -192,7 +304,26 @@ def first_value(dss_file,dss_rec,start_str=None,end_str=None):
 
 
 def first_value(dss_file,dss_rec,start_str=None,end_str=None):
-    
+    """
+    Reads a DSS time-series record and returns its first value.
+
+    When no time window is specified, reads the entire record. When both start_str
+    and end_str are provided, reads only the specified time window.
+
+    NOTE: This function is defined twice in the original source file. Both definitions
+    are preserved here as-is. The second definition supersedes the first at runtime.
+
+    Inputs:
+      dss_file  -- full path to the DSS file containing the record
+      dss_rec   -- DSS pathname string of the record to read
+      start_str -- start date/time string in HEC format (e.g., '01Jan2014 0000');
+                   pass None to read the full record (default None)
+      end_str   -- end date/time string in HEC format; pass None to read the full
+                   record (default None)
+
+    Output:
+      Returns the first float value in the retrieved time-series record.
+    """
     # Open the DSS file for reading
     dssFm = HecDss.open(dss_file)    
 
@@ -212,6 +343,23 @@ def first_value(dss_file,dss_rec,start_str=None,end_str=None):
     return tsc.values[0]
 
 def standardize_interval(tsm, interval, makePerAver=True):
+    """
+    Resamples a TimeSeriesMath object to a target time interval using time-averaging,
+    optionally setting its data type to PER-AVER before resampling.
+
+    If the time series is already at the target interval, it is returned unchanged.
+    Supported target intervals are '1hour', '1day', and '1week'.
+
+    Inputs:
+      tsm         -- HEC TimeSeriesMath object to standardize
+      interval    -- target interval string: '1hour', '1day', or '1week' (case-insensitive)
+      makePerAver -- if True and a transform is needed, sets the record type to PER-AVER
+                     before resampling (default True)
+
+    Output:
+      Returns a TimeSeriesMath object at the target interval.
+      Calls sys.exit(-1) if the interval string is not recognized.
+    """
     
     # Retrieve the underlying time-series container
     tsc = tsm.getData()
@@ -248,10 +396,22 @@ def standardize_interval(tsm, interval, makePerAver=True):
         return tsm
 
 def get_sanitized_record_list(dss_file_path):
-    '''The DSS library seems to return lists of paths with dates in them (getPathnameList()), and some of those
-    dates don't even exist in the file or cannot be read and throw an error.  As of Jan 2024,
-    this is an orregular problem, and the manual soluation is throwing away the DSS file but
-    in many cases that is problematic. So, here we filter dates and check for duplicates.'''
+    """
+    Returns a de-duplicated list of DSS pathnames from a DSS file with the D-part
+    (date token) cleared, working around a known DSS library issue where
+    getPathnameList() can return date-specific paths that do not exist or cannot
+    be read.
+
+    Strips the D-part (index 4) from each pathname and discards duplicates so that
+    each unique time-series record is represented only once in the output list.
+
+    Inputs:
+      dss_file_path -- full path to the DSS file to query
+
+    Output:
+      Returns a list of unique DSS pathname strings with empty D-parts, suitable
+      for safe iteration and reading.
+    """
     
     # Open the DSS file and retrieve all pathname records.
     dss = HecDss.open(dss_file_path)
@@ -277,7 +437,31 @@ def get_sanitized_record_list(dss_file_path):
 
 
 def dss_read_ts_safe(dssFilePath,dssRec,start_date=None,end_date=None,returnTSM=False,debug=False):
+    """
+    Reads a DSS time-series record safely, returning either a TimeSeriesContainer
+    or a TimeSeriesMath object depending on the returnTSM flag.
 
+    When no time window is specified, uses dss.get() to read the full record
+    (preferred over read() which can truncate data). When a time window is
+    provided, uses dss.read() for the specified range.
+
+    Inputs:
+      dssFilePath -- full path to the DSS file to read from
+      dssRec      -- DSS pathname string of the record to read
+      start_date  -- start date/time string in HEC format (e.g., '01Jan2014 0000');
+                     pass None to read the full record (default None)
+      end_date    -- end date/time string in HEC format; pass None to read the full
+                     record (default None)
+      returnTSM   -- if True, return a TimeSeriesMath object; if False, return a
+                     TimeSeriesContainer (default False)
+      debug       -- if True, print file path and record name to stdout (default False)
+
+    Output:
+      Returns either a TimeSeriesContainer or a TimeSeriesMath object containing
+      the requested record data, depending on returnTSM.
+      Raises an exception if the DSS file does not exist.
+    """
+    
     # Open DSS file for reading.
     # This call will raise an exception if the file does not exist.
     dss = HecDss.open(dssFilePath,True)
@@ -326,7 +510,22 @@ def dss_read_ts_safe(dssFilePath,dssRec,start_date=None,end_date=None,returnTSM=
 
 
 def data_from_dss(dss_file,dss_rec,starttime_str, endtime_str):
-    
+    """
+    Reads a DSS time-series record and returns its values array.
+
+    When starttime_str and endtime_str are both None, reads the full record using
+    dss.get(). Otherwise reads only the specified time window using dss.read().
+
+    Inputs:
+      dss_file      -- full path to the DSS file to read from
+      dss_rec       -- DSS pathname string of the record to read
+      starttime_str -- start date/time string in HEC format (e.g., '01Jan2014 0000'),
+                       or None to read the full record
+      endtime_str   -- end date/time string in HEC format, or None to read the full record
+
+    Output:
+      Returns the values array from the TimeSeriesContainer for the requested record.
+    """
     # Open DSS file for reading.
     dssFm = HecDss.open(dss_file)
     
@@ -345,7 +544,22 @@ def data_from_dss(dss_file,dss_rec,starttime_str, endtime_str):
 
 
 def hectime_to_datetime(tsc):
+    """
+    Converts the HEC integer timestamps in a TimeSeriesContainer to a list of
+    Python datetime objects.
 
+    Constructs an equivalent Java Date object for each time step by extracting
+    year, month, day, hour, and minute from the HEC time, then converts the
+    Java Date to a Python datetime via a Unix timestamp.
+
+    Inputs:
+      tsc -- HEC TimeSeriesContainer object with a populated time axis and
+             getHecTime() method returning HEC time objects per index
+
+    Output:
+      Returns a list of Python datetime objects, one per time step in tsc.
+      Length equals tsc.numberValues.
+    """
     # Output list of Python datetime objects.
     dtt = []
     
@@ -367,7 +581,21 @@ def hectime_to_datetime(tsc):
     return dtt
     
 def hectime_to_julian(time_string):
+    """
+    Converts a single HEC time object to a decimal day-of-year (Julian day) value.
 
+    Constructs a Java Date from the HEC time's year, month, day, hour, and minute
+    fields, converts it to a Python datetime, and then applies decimal_doy.
+
+    Inputs:
+      time_string -- HEC time object with year(), month(), day(), hour(), and
+                     minute() accessor methods (e.g., from HecTime.value())
+
+    Output:
+      Returns a float representing the decimal day-of-year corresponding to the
+      input HEC time (e.g., 1.5 = noon on Jan 1).
+    """
+    
     # Convert the HEC Time to a Java time
     java_date = Date(time_string.year() - 1900, time_string.month() - 1, time_string.day(), time_string.hour(), time_string.minute())
     
@@ -382,7 +610,20 @@ def hectime_to_julian(time_string):
 
 
 def fixInputLocationFpart(currentAlternative, tspath):
-    
+    """
+    Updates the F-part of a DSS pathname to match the current alternative's input
+    F-part prefix, preserving the last colon-separated token of the original F-part.
+
+    Used to correct linked time-series pathnames when the WAT alternative context
+    changes between model runs (e.g., when the run ID embedded in the F-part changes).
+
+    Inputs:
+      currentAlternative -- WAT scripting alternative object providing getInputFPart()
+      tspath             -- DSS pathname string whose F-part is to be updated
+
+    Output:
+      Returns the updated DSS pathname string with the corrected F-part.
+    """
     # Build replacement F-part prefix from current input F-part.
     new_fpart_start = ':'.join(currentAlternative.getInputFPart().split(':')[:-1])
     
@@ -401,7 +642,20 @@ def fixInputLocationFpart(currentAlternative, tspath):
     return tspath
 
 def appendAPart(current_path, ApartAppend):
-    
+    """
+    Appends a suffix to the A-part of a DSS pathname, separated by an underscore.
+    If the A-part is empty, the suffix becomes the entire A-part.
+
+    Inputs:
+      current_path  -- DSS pathname string whose A-part is to be modified
+                       NOTE: contains a pre-existing bug - uses the undefined variable
+                       'tspath' instead of 'current_path' on its first line, which will
+                       raise a NameError at runtime
+      ApartAppend   -- string to append to the existing A-part
+
+    Output:
+      Returns the updated DSS pathname string with the modified A-part.
+    """
     # Split DSS pathname into components.
     tspath = tspath.split('/')
     Apart = tspath[1]
@@ -422,7 +676,25 @@ def appendAPart(current_path, ApartAppend):
     return tspath
 
 def getDataLocationDSSInfo(location, currentAlternative, computeOptions):
-    
+    """
+    Resolves the DSS pathname and DSS file path for a given WAT data location,
+    handling both model-linked and externally linked locations.
+
+    For model-linked locations, the DSS pathname is resolved from the alternative's
+    linked time series and the F-part is corrected via fixInputLocationFpart. The
+    file path is taken from the compute options DSS filename. For externally linked
+    locations, the DSS path and file path are read directly from the linked location.
+
+    Inputs:
+      location           -- WAT DataLocation object describing the data source
+      currentAlternative -- WAT scripting alternative object for resolving linked time series
+      computeOptions     -- WAT compute options object providing the compute DSS filename
+
+    Output:
+      Returns a tuple (tspath, dsspath) where:
+        tspath  -- the resolved DSS pathname string for the record
+        dsspath -- the full path string to the DSS file containing the record
+    """
     # Check whether the location references a previous model.
     if location.isLinkedToPreviousModel():
         
@@ -446,7 +718,22 @@ def getDataLocationDSSInfo(location, currentAlternative, computeOptions):
     return tspath, dsspath
 
 def strip_templateID_and_rename_records(dssFilePath,currentAlt):
+    """
+    Strips the first 4 characters (template ID prefix) from the F-part of all DSS
+    record pathnames in a file, renaming them in place. A backup copy of the original
+    file is created before any changes are made.
 
+    If any record's F-part does not contain a hyphen, the function returns early
+    without making any changes, assuming no template ID is present.
+
+    Inputs:
+      dssFilePath -- full path to the DSS file whose records are to be renamed
+      currentAlt  -- WAT scripting alternative object used for logging renamed paths
+
+    Output:
+      No return value. Renames records in-place in the DSS file.
+      A backup of the original file is saved at dssFilePath + '.bak'.
+    """
     # make copy of dss file
     shutil.copyfile(dssFilePath,dssFilePath+'.bak')
 
@@ -477,7 +764,24 @@ def strip_templateID_and_rename_records(dssFilePath,currentAlt):
     dss.close()
 
 def add_DSS_Data(currentAlt, dssFile, timewindow, input_data, output_path):
-    
+    """
+    Reads multiple DSS time-series records from a single DSS file and writes
+    their element-wise sum to a new record in the same file.
+
+    Units and data type are taken from the last record read. All input records
+    must share the same time axis for the result to be meaningful.
+
+    Inputs:
+      currentAlt   -- WAT scripting alternative object used for logging
+      dssFile      -- full path to the DSS file containing both input and output records
+      timewindow   -- WAT run time window object providing start/end time strings and HecTime values
+      input_data   -- list of DSS pathname strings to read and sum
+      output_path  -- DSS pathname string for the output summed record
+
+    Output:
+      Returns 0 on successful completion.
+      Writes the summed time-series record to dssFile at output_path.
+    """
     # Get simulation time window boundaries.
     starttime_str = timewindow.getStartTimeString()
     endtime_str = timewindow.getEndTimeString()
@@ -549,11 +853,30 @@ def add_DSS_Data(currentAlt, dssFile, timewindow, input_data, output_path):
 
 def resample_dss_ts(inputDSSFile, inputRec, timewindow, outputDSSFile, newPeriod, 
                     pad_1mon=False,pad_value=None):
-    '''Can upsample an even period DSS timeseries, e.g. go from 1DAY -> 1HOUR, or downsample.  However, hecmath likes to
-    clip of days that don't have the complete 24 hour cycle.  So, we pad here, but there is a chance we ask for data not
-    available. The read gives garbage data and doesn't complain.  
-    TODO: figure out how to check for bounds for non-midnight start and end times.
-    '''
+    """
+    Resamples a DSS time-series record to a new time interval using time-averaging.
+
+    Handles both upsampling (e.g., 1DAY -> 1HOUR) and downsampling. Optionally
+    extends the read window by one month on each end (pad_1mon) to prevent the
+    HEC math library from clipping incomplete day cycles at the boundaries.
+    Optionally pads the source series with a synthetic value at both ends (pad_value)
+    before resampling.
+
+    Inputs:
+      inputDSSFile -- full path to the source DSS file containing the record to resample
+      inputRec     -- DSS pathname string of the record to resample
+      timewindow   -- WAT run time window object providing start/end time strings,
+                      or None to read the full record
+      outputDSSFile-- full path to the destination DSS file for the resampled record
+      newPeriod    -- target interval string (e.g., '1HOUR', '1DAY')
+      pad_1mon     -- if True, extends the read window by 31 days on each end to avoid
+                      boundary clipping (default False)
+      pad_value    -- if not None, a float value prepended and appended to the source
+                      series before resampling to prevent edge discontinuities (default None)
+
+    Output:
+      No return value. Writes the resampled time-series record to outputDSSFile.
+    """
     
     dssFm = HecDss.open(inputDSSFile)
     
@@ -621,7 +944,27 @@ def resample_dss_ts(inputDSSFile, inputRec, timewindow, outputDSSFile, newPeriod
 
 
 def airtemp_lapse(dss_file,dss_rec,lapse_in_C,dss_outfile,f_part):
-    
+    """
+    Applies an air temperature lapse rate correction to a DSS temperature record
+    and writes the result with an updated F-part to an output DSS file.
+
+    If the source record's units are in Fahrenheit, the lapse value is converted
+    from Celsius to Fahrenheit before being applied.
+
+    NOTE: This function is defined twice in the original source file. Both definitions
+    are identical and are preserved here as-is. The second definition supersedes the
+    first at runtime.
+
+    Inputs:
+      dss_file   -- full path to the source DSS file containing the temperature record
+      dss_rec    -- DSS pathname string of the temperature record to adjust
+      lapse_in_C -- lapse rate correction value in degrees Celsius (added to each value)
+      dss_outfile-- full path to the destination DSS file for the corrected record
+      f_part     -- new F-part string to apply to the output DSS pathname
+
+    Output:
+      No return value. Writes the lapse-corrected temperature record to dss_outfile.
+    """
     # Read temperature time series from DSS.
     dss = HecDss.open(dss_file)
     tsm = dss.read(dss_rec)
@@ -647,7 +990,23 @@ def airtemp_lapse(dss_file,dss_rec,lapse_in_C,dss_outfile,f_part):
     dss_out.close()
 
 def min_ts(dss_file,dss_rec,min_value,dss_outfile,f_part):
-    
+    """
+    Enforces a minimum value threshold on a DSS time-series record and writes the
+    result with an updated F-part to an output DSS file.
+
+    Unlike min_ts_flow_cfs in earlier modules, this function does not perform unit
+    conversion; the min_value is applied directly in the record's native units.
+
+    Inputs:
+      dss_file  -- full path to the source DSS file containing the record
+      dss_rec   -- DSS pathname string of the record to process
+      min_value -- minimum allowable value (in the record's native units)
+      dss_outfile -- full path to the destination DSS file for the corrected record
+      f_part    -- new F-part string to apply to the output DSS pathname
+
+    Output:
+      No return value. Writes the minimum-constrained record to dss_outfile.
+    """
     # Retrieve DSS time series.
     dss = HecDss.open(dss_file)
     tsc = dss.get(dss_rec,True)
@@ -668,7 +1027,26 @@ def min_ts(dss_file,dss_rec,min_value,dss_outfile,f_part):
     dss_out.close()
 
 def add_flows(currentAlt, timewindow, inflow_records, dss_file, output_dss_record_name, output_dss_file):
-     
+    """
+    Reads multiple DSS flow records and writes their element-wise sum to a new DSS record.
+
+    Supports reading records from alternate DSS files using the '::' separator syntax
+    (e.g., 'alt_file.dss::dss_pathname'). Trims values outside the run time window,
+    converts CMS to CFS where needed, and writes the summed output in CFS.
+
+    Inputs:
+      currentAlt             -- WAT scripting alternative object for logging
+      timewindow             -- WAT run time window object providing start/end time strings
+      inflow_records         -- list of DSS pathname strings to read and sum; entries may
+                                use the 'filepath::dssrecord' syntax for alternate DSS files
+      dss_file               -- full path to the primary DSS file for records without '::'
+      output_dss_record_name -- DSS pathname string for the output summed record
+      output_dss_file        -- full path to the DSS file where the output record is written
+
+    Output:
+      No return value. Writes the summed flow record (CFS, preserving source data type)
+      to output_dss_file. Calls sys.exit(-1) if any record cannot be read.
+    """
     # Unit conversion references.
     # cfs_2_acreft = balance_period * 3600. / 43559.9
     # acreft_2_cfs = 1. / cfs_2_acreft
@@ -787,7 +1165,39 @@ def add_flows(currentAlt, timewindow, inflow_records, dss_file, output_dss_recor
 def add_or_subtract_flows(currentAlt, timewindow, inflow_records, dss_file, operation,
                        output_dss_record_name, output_dss_file, multiplier=None,
                        delay_days=0,delay_hours=0):
-    # Define a function to add or subtract multiple flow records based on flags
+    """
+    Reads multiple DSS flow records and combines them element-wise using per-record
+    add or subtract operations, with optional per-record scalar multipliers and an
+    optional time delay applied to the start of the read window.
+
+    Supports reading records from alternate DSS files using the '::' separator syntax.
+    Trims values outside the run time window, converts CMS to CFS where needed, and
+    writes the combined output in CFS.
+
+    Inputs:
+      currentAlt             -- WAT scripting alternative object for logging
+      timewindow             -- WAT run time window object providing start/end time strings
+      inflow_records         -- list of DSS pathname strings to combine; entries may use
+                                the 'filepath::dssrecord' syntax for alternate DSS files
+      dss_file               -- full path to the primary DSS file for records without '::'
+      operation              -- list of booleans/None parallel to inflow_records:
+                                  None or True  = add this record to the accumulator
+                                  False         = subtract this record from the accumulator
+                                  (first record always initializes the accumulator)
+      output_dss_record_name -- DSS pathname string for the output record
+      output_dss_file        -- full path to the DSS file where the output record is written
+      multiplier             -- list of floats parallel to inflow_records; each value is
+                                applied to its record before adding/subtracting
+                                (default None, treated as all 1.0)
+      delay_days             -- integer number of days to advance the start of the read window,
+                                used to account for routing travel time (default 0)
+      delay_hours            -- integer number of hours to advance the start of the read window
+                                in addition to delay_days (default 0)
+
+    Output:
+      No return value. Writes the combined flow record (CFS, preserving source data type)
+      to output_dss_file. Calls sys.exit(-1) if any record cannot be read.
+    """
     
     # Retrieve start time as string from the time window
     starttime_str = timewindow.getStartTimeString()
@@ -936,9 +1346,19 @@ def add_or_subtract_flows(currentAlt, timewindow, inflow_records, dss_file, oper
 
 
 def hec_str_time_to_dt(hec_str_time):
-    '''
-    Convert HEC date time format to python datetime object
-    '''
+    """
+    Converts a HEC-formatted date/time string to a Python datetime object.
+
+    Handles the HEC convention of '2400' end-of-day timestamps by converting
+    them to midnight of the following day.
+
+    Inputs:
+      hec_str_time -- HEC date/time string in the format 'ddMmmYYYY HHMM'
+                      (e.g., '01Jan2014 2400')
+
+    Output:
+      Returns a Python datetime object representing the equivalent date and time.
+    """
     # Handles special case where time ends in 2400 (rolls to next day)
     dt_format = '%d%b%Y %H%M'
     add_day = False
@@ -966,10 +1386,30 @@ def hec_str_time_to_dt(hec_str_time):
 
 def create_constant_dss_rec(currentAlt, timewindow, output_dss_file, constant=0.0, what='flow', 
                         dss_type='PER-AVER', period='1HOUR',cpart='ZEROS', fpart='ZEROS'):
-    '''Create and write a dss record with a constant in it for the given time windows.
-       what={'flow','temp-water'}
-       period={'1HOUR','1DAY'}
-    '''
+    """
+    Creates and writes a DSS time-series record filled with a constant value
+    for the run time window, padded by one day on each end.
+
+    Supports flow, water temperature, gate, evaporation, and elevation parameter types.
+    The time window is extended by one day before and after to support lookback and
+    balance flow calculations that require data outside the strict compute window.
+
+    Inputs:
+      currentAlt      -- WAT scripting alternative object for logging error messages
+      timewindow      -- WAT run time window object providing start/end time strings
+      output_dss_file -- full path to the DSS file where the constant record is written
+      constant        -- constant value to fill the record with (default 0.0)
+      what            -- parameter type string: 'flow', 'temp-water', 'gate', 'evap',
+                         or 'elev' (default 'flow')
+      dss_type        -- DSS data type string (e.g., 'PER-AVER', 'INST-VAL') (default 'PER-AVER')
+      period          -- time interval string: '1HOUR' or '1DAY' (default '1HOUR')
+      cpart           -- C-part (location) string for the DSS pathname (default 'ZEROS')
+      fpart           -- F-part (version) string for the DSS pathname (default 'ZEROS')
+
+    Output:
+      Returns True on successful write.
+      Returns False if 'what' or 'period' is not recognized (also logs an error message).
+    """
 
     # Creates a synthetic time series (e.g., constant flow or temperature)
     if what.lower()=='flow':
@@ -1097,6 +1537,25 @@ def calculate_dewpoint(air_temp, relative_humidity):
 
 
 def relhum_from_at_dp(met_dss_file, at_path, dp_path):
+    """
+    Computes relative humidity from air temperature and dewpoint temperature DSS records
+    using the August-Roche-Magnus approximation, and writes the derived record back to
+    the meteorology DSS file.
+
+    The output pathname is derived from the air temperature record's pathname:
+      - B-part (location) is truncated to 5 characters
+      - C-part (parameter) is set to 'RELHUM-FROM-AT-DP'
+      - F-part (version) has '-DERIVED' appended
+
+    Inputs:
+      met_dss_file -- full path to the meteorology DSS file containing both input records
+      at_path      -- DSS pathname string for the air temperature record (deg C)
+      dp_path      -- DSS pathname string for the dewpoint temperature record (deg C)
+
+    Output:
+      No return value. Writes the derived relative humidity record (%, same time axis as
+      air temperature) back to met_dss_file.
+    """
     
     # Open DSS file and read air temperature series
     dss = HecDss.open(met_dss_file)
@@ -1126,6 +1585,25 @@ def relhum_from_at_dp(met_dss_file, at_path, dp_path):
 
 
 def dp_from_at_relhum(met_dss_file, at_path, rh_path):
+    """
+    Computes dewpoint temperature from air temperature and relative humidity DSS records
+    using the inverted August-Roche-Magnus approximation, and writes the derived record
+    back to the meteorology DSS file.
+
+    The output pathname is derived from the air temperature record's pathname:
+      - B-part (location) is truncated to 5 characters
+      - C-part (parameter) is set to 'temp-dewpoint'
+      - F-part (version) has '-DERIVED' appended
+
+    Inputs:
+      met_dss_file -- full path to the meteorology DSS file containing both input records
+      at_path      -- DSS pathname string for the air temperature record (deg C)
+      rh_path      -- DSS pathname string for the relative humidity record (%)
+
+    Output:
+      No return value. Writes the derived dewpoint temperature record (deg C, same time
+      axis as air temperature) back to met_dss_file.
+    """
     
     # Open the DSS file and read air temperature
     dss = HecDss.open(met_dss_file)
@@ -1152,7 +1630,23 @@ def dp_from_at_relhum(met_dss_file, at_path, rh_path):
     dss.close()
 
 def check_start_and_end(values, times, startime, endtime):
-    
+    """
+    Trims a parallel pair of values and times arrays to fit within a specified
+    HEC integer time window, removing leading values before startime and trailing
+    values after endtime.
+
+    Assumes uniform time spacing; uses the difference between the first two time
+    steps to compute the number of steps to trim.
+
+    Inputs:
+      values  -- list or array of data values to trim
+      times   -- list or array of HEC integer time values corresponding to values
+      startime-- HEC integer time value for the desired start of the window (inclusive)
+      endtime -- HEC integer time value for the desired end of the window (inclusive)
+
+    Output:
+      Returns a tuple (values, times) with both arrays trimmed to the specified window.
+    """
     # Trim the beginning if earlier than the allowable time range
     if times[0] < startime:  
         # Notify the user that the DSS start date precedes the target window
@@ -1183,7 +1677,33 @@ def check_start_and_end(values, times, startime, endtime):
 
 
 def replace_data(currentAlt, timewindow, pairs, dss_file, dss_outfile, months, standard_interval=None):
-    
+    """
+    Replaces values in one or more base DSS time-series records with values from
+    corresponding alternate records, but only for time steps falling within specified
+    calendar months. The merged result is written to an output DSS file under a new
+    pathname indicating the data source.
+
+    For each pair, both the base and alternate records are read, optionally resampled
+    to a standard interval, and trimmed to the run time window. Values in the base
+    record for time steps in the specified months are overwritten with the corresponding
+    alternate values. The output pathname's F-part is set to 'MergedFrom_<A-part of alt>'.
+
+    Inputs:
+      currentAlt        -- WAT scripting alternative object for logging
+      timewindow        -- WAT run time window object providing start/end time strings
+      pairs             -- list of 2-element lists [base_path, alt_path]; each pair defines
+                           one base DSS record and one replacement source record
+      dss_file          -- full path to the DSS file containing both base and alt records
+      dss_outfile       -- full path to the DSS file where merged results are written
+      months            -- list of integer month numbers (1=January, 12=December) during
+                           which base values will be replaced with alternate values
+      standard_interval -- optional interval string (e.g., '1hour') to resample both base
+                           and alt records before merging (default None = no resampling)
+
+    Output:
+      No return value. Writes the merged time-series record for each pair to dss_outfile.
+      Calls sys.exit(1) if units or time intervals do not match between base and alt records.
+    """
     # Compute and log start and end times for the window
     starttime_str = timewindow.getStartTimeString()
     endtime_str = timewindow.getEndTimeString()
@@ -1246,14 +1766,14 @@ def replace_data(currentAlt, timewindow, pairs, dss_file, dss_outfile, months, s
         # Safety check: units and time intervals must match
         if base_units != alt_units:
             
-            # Mismatched units would corrupt the merged output — abort
+            # Mismatched units would corrupt the merged output to abort
             currentAlt.addComputeMessage('Units do not match for {0} and {1}, skipping'.format(pair[0], pair[1]))
             dssFm.close()
             sys.exit(1)
         
         if base_interval != alt_interval:
             
-            # Mismatched intervals cannot be safely merged — abort
+            # Mismatched intervals cannot be safely merged - abort
             currentAlt.addComputeMessage('Intervals do not match for {0} and {1}, changing interval...'.format(pair[0], pair[1]))
             dssFm.close()
             sys.exit(1)
@@ -1293,6 +1813,27 @@ def replace_data(currentAlt, timewindow, pairs, dss_file, dss_outfile, months, s
         dssFmOut.close()
 
 def airtemp_lapse(dss_file,dss_rec,lapse_in_C,dss_outfile,f_part):
+    """
+    Applies an air temperature lapse rate correction to a DSS temperature record
+    and writes the result with an updated F-part to an output DSS file.
+
+    If the source record's units are in Fahrenheit, the lapse value is converted
+    from Celsius to Fahrenheit before being applied.
+
+    NOTE: This is the second definition of airtemp_lapse in the original source file.
+    Both definitions are identical and are preserved as-is. This definition supersedes
+    the first at runtime.
+
+    Inputs:
+      dss_file   -- full path to the source DSS file containing the temperature record
+      dss_rec    -- DSS pathname string of the temperature record to adjust
+      lapse_in_C -- lapse rate correction value in degrees Celsius (added to each value)
+      dss_outfile-- full path to the destination DSS file for the corrected record
+      f_part     -- new F-part string to apply to the output DSS pathname
+
+    Output:
+      No return value. Writes the lapse-corrected temperature record to dss_outfile.
+    """
     
     # Open DSS file and read the temperature record
     dss = HecDss.open(dss_file)
@@ -1319,10 +1860,26 @@ def airtemp_lapse(dss_file,dss_rec,lapse_in_C,dss_outfile,f_part):
     dss_out.close()
 
 def preprend_first_value_on_ts(dss_file,dss_rec,prepend_n):
-    '''Sometimes ResSim needs some lookback values, or whatever
-    
-    Be careful that the first record is where you want to start - sometimes these things change
-    '''
+    """
+    Prepends the first value of a DSS time-series record to itself n times,
+    extending the series backward in time by n evenly spaced time steps.
+
+    Useful when a model (e.g., ResSim) requires lookback values before the
+    first available data point. The time step size is inferred from the difference
+    between the first two existing timestamps.
+
+    NOTE: The function name contains a pre-existing typo ('preprend' instead of 'prepend').
+    This is preserved as-is from the original source.
+
+    Inputs:
+      dss_file  -- full path to the DSS file containing the record to extend
+      dss_rec   -- DSS pathname string of the record to prepend values to
+      prepend_n -- integer number of additional time steps to prepend at the start
+
+    Output:
+      No return value. Writes the extended time-series record back to dss_file
+      in-place under the same DSS pathname.
+    """
     
     # Open the DSS file and fetch the requested time series container
     dss = HecDss.open(dss_file)

@@ -77,6 +77,49 @@ reload(fpp)
 
 
 def computeAlternative(currentAlternative, computeOptions):
+    """
+    Entry point for the legacy WAT scripting alternative compute for the standalone
+    CE-QUAL-W2 Folsom forecast post-processing workflow.
+
+    NOTE: As of 2025-02 this script is unused. It has been superseded by the Folsom
+    output-link scripting alternative, which provides a consistent post-processing
+    pathway across all Folsom forecast configurations. Verify whether any legacy
+    forecast alternatives still reference this script before modifying it.
+
+    Workflow:
+      1. Determines the simulation year, alternative name, and W2 model variant
+         (base iterative, FixedATSP, or NoBypass) from the simulation name and
+         the forecast group directory.
+      2. Constructs paths to the CE-QUAL-W2 model run directory, shared forecast
+         DSS, and schedule CSV file.
+      3. Reads TEMP_LOG.OPT to identify the last ATSP schedule number loaded
+         during the simulation (the final iterative schedule applied May to Nov).
+      4. Reads the corresponding target temperature time series from the schedule
+         library DSS, aligns its timestamps to the forecast year, converts
+         Fahrenheit to Celsius if needed, and writes it to the output DSS file.
+      5. Writes a 24-step hourly constant DSS record containing the active schedule
+         number for use by reporting tools.
+      6. Loads the W2 Folsom release temperature time series from the linked input
+         location, resamples it to daily, and applies the Watt Avenue reverse
+         regression (calc_downstream_temp_W2) to estimate downstream temperature.
+         The result is written to the third configured output DSS record.
+
+    Inputs:
+      currentAlternative -- WAT scripting alternative object providing input/output
+                            data locations, compute messages, and time-series loading
+      computeOptions     -- WAT compute options object providing the DSS filename,
+                            run time window, run directory, and simulation name
+
+    Output:
+      Returns True on successful completion.
+      Writes the following DSS records to the forecast DSS file:
+        - outputpaths[0]: ATSP schedule target temperatures (1-day, deg C)
+        - outputpaths[1]: Active ATSP schedule number     (24-step hourly constant)
+        - outputpaths[2]: Watt Avenue downstream regression temperature (1-day, deg C)
+      NOTE: The schedule target temperature record (outputpaths[0]) has a known
+      issue where it may not appear in the DSS output file; see the TODO comment
+      in the body for details.
+    """
     
     #######################################################################
     # Script initialization
@@ -357,10 +400,24 @@ def computeAlternative(currentAlternative, computeOptions):
 
 
 def rectify_tsc_dates_to_model_year(tsc,model_year):
-    '''
-    If you mess up these dates, the DSS write fails silently, and may mess up future writes 
-    while the file is open!
-    '''
+    """
+    Replaces the year component of all timestamps in a TimeSeriesContainer
+    with a specified model year, preserving month, day, and time-of-day.
+
+    Required before writing schedule temperature records read from a library
+    DSS file that may contain timestamps from a different year than the current
+    forecast. If timestamps are malformed, the DSS write fails silently and may
+    corrupt subsequent writes while the file handle remains open.
+
+    Inputs:
+      tsc        -- HEC TimeSeriesContainer object whose timestamps are to be updated
+      model_year -- integer; the four-digit calendar year to substitute into all
+                    timestamps
+
+    Output:
+      Returns the modified TimeSeriesContainer with all timestamps updated to
+      model_year and startTime set to the first updated timestamp.
+    """
     
     # Convert the model year to a string for date replacement.
     ystr = str(model_year)
@@ -385,6 +442,25 @@ def rectify_tsc_dates_to_model_year(tsc,model_year):
     return tsc
 
 def write_constant_1day_ts(dssFm,rec,rtw,constant_value):
+    """
+    Writes a 24-hour constant-value time series (one value per hour, hourly interval)
+    to a DSS file using an open HecDss file handle.
+
+    Used to expose scalar values such as the selected ATSP schedule number as a
+    DSS time series so that reporting tools can read them in a standard format.
+    The time series starts at the run time window start time and spans 24 hourly
+    time steps. Units are set to '#' (dimensionless count) and type to INST-VAL.
+
+    Inputs:
+      dssFm          -- open HecDss file handle to write the record into
+      rec            -- DSS pathname string for the output record
+      rtw            -- WAT run time window object providing the start time string
+      constant_value -- float or int; the constant value to fill all 24 time steps
+
+    Output:
+      No return value. Writes one 24-step hourly INST-VAL DSS record to dssFm
+      at the pathname specified by rec.
+    """
     
     # Get the run window start time string from the runtime window object.
     starttime_str = rtw.getStartTimeString()

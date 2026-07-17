@@ -8,6 +8,34 @@ import Simple_DSS_Functions as sdf
 reload(sdf)
 
 def computeAlternative(currentAlternative, computeOptions):
+    """
+    Computes water balance flows for Folsom Lake and Lake Natoma in the American River system.
+
+    For each reservoir, this function:
+      - Resolves DSS input/output file paths and the run time window
+      - Resamples daily time-series records to hourly resolution as needed
+      - Assembles inflow, outflow, stage, and evaporation record references
+      - Reads the elevation-storage-area table from a CSV file
+      - Calls create_balance_flows() to compute and write balance flow DSS records
+        using conic storage interpolation
+
+    A TODO section is included at the end for planned river balance calculations
+    (Trinity River, Clear Creek, Sacramento River) that are not yet implemented.
+
+    Inputs:
+      currentAlternative -- WAT scripting alternative object; provides the compute
+                            time step, alternative name, and message logging interface
+      computeOptions     -- WAT compute options object; provides the DSS filename,
+                            run time window, and run directory
+
+    Output:
+      Returns True on successful completion of both reservoir balance flow computations.
+      Writes the following DSS records to the shared pre-process DSS file:
+        - Folsom Lake balance flow  (1-hour, resampled to 1-day)   at DERIVED-CONIC INTERP NO EVAP
+        - Lake Natoma balance flow  (1-hour, resampled to 3-hour)  at DERIVED-CONIC INTERP NO EVAP
+    """
+    
+    
     # Log start of alternative computation.
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName())
     currentAlternative.addComputeMessage('\n')

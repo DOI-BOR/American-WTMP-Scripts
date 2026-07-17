@@ -21,6 +21,18 @@ from com.rma.io import DssFileManagerImpl
 from java.util import TimeZone
 
 def linear_interpolation(x_values, y_values, x):
+    """
+    Performs linear interpolation to estimate a y value for a given x.
+
+    Inputs:
+      x_values -- list of x data points (must be sorted ascending, length >= 2)
+      y_values -- list of corresponding y data points (same length as x_values)
+      x        -- the x value at which to interpolate
+
+    Output:
+      Returns the interpolated y value (float).
+      Raises ValueError if list lengths mismatch, fewer than 2 points, or x is out of range.
+    """
     
     # Validate that x and y arrays have matching lengths.
     # At least two points are required for interpolation.
@@ -45,6 +57,21 @@ def linear_interpolation(x_values, y_values, x):
     raise ValueError("Interpolation point is outside the range of provided data.")
 
 def read_elev_storage_area_file(file_name, res_name):
+    """
+    Reads an elevation-storage-area lookup table from a CSV file.
+
+    For most reservoirs, each row contains: elevation (ft), storage (acre-ft), area (acre).
+    For Natoma reservoir, each row contains only: elevation (ft), area (acre) (no storage column).
+
+    Inputs:
+      file_name -- full path to the CSV file containing the elevation-storage-area table
+      res_name  -- reservoir name string used to select the appropriate parsing format
+
+    Output:
+      Returns a dictionary with keys 'elev', 'stor', and 'area', each mapping to a list of floats.
+      For Natoma, 'stor' will be an empty list.
+    """
+    
     # Input file contains elevation, storage, and area information.
     # Units are [ft, acre-ft, acre].
     elevstorarea = {} 
@@ -92,6 +119,21 @@ def read_elev_storage_area_file(file_name, res_name):
     return elevstorarea
 
 def build_conic_storage_array(elev, area, firstStorageValue=0.0):
+    """
+    Computes cumulative storage at each elevation in the elevation-area curve
+    using the conic (frustum) formula between consecutive measurement points.
+
+    Adapted from storage.java in HEC ResSim (2022-06-17).
+
+    Inputs:
+      elev              -- list of elevation values (ft), sorted ascending
+      area              -- list of surface area values (acre) corresponding to each elevation
+      firstStorageValue -- storage value at the lowest elevation (default 0.0 acre-ft)
+
+    Output:
+      Returns a list of cumulative storage values (acre-ft), one per elevation point.
+    """
+    
     '''Find storage of slabs between measurement points on the elevation area curve,
     using a conic estimation.  Adapted from storage.java from HEC ResSim, 2022-06-17'''
     # calculate storage at each elevation using conic formula
@@ -115,6 +157,23 @@ def build_conic_storage_array(elev, area, firstStorageValue=0.0):
 
 
 def conic_storage_interp(interpElev, elev, area, conicStorage, idx):
+    """
+    Interpolates storage at an arbitrary elevation using conic (frustum) interpolation
+    between two bounding elevation-area measurement points.
+
+    Adapted from storage.java in HEC ResSim (2022-06-17).
+
+    Inputs:
+      interpElev   -- the target elevation at which to interpolate storage (ft)
+      elev         -- list of elevation values from the elevation-area table (ft)
+      area         -- list of surface area values from the elevation-area table (acre)
+      conicStorage -- list of precomputed conic storage values at each table elevation (acre-ft)
+      idx          -- lower-bounding index into elev/area/conicStorage for interpElev
+
+    Output:
+      Returns the interpolated storage value at interpElev (acre-ft, float).
+    """
+    
     '''Find storage between measurement points on the elevation area curve,
     using interpolation between conic layers.  Adapted from storage.java from
     HEC ResSim, 2022-06-17'''
@@ -136,6 +195,20 @@ def conic_storage_interp(interpElev, elev, area, conicStorage, idx):
 
 
 def get_elev_layer_idx(elev, obs_elev, elev_stor_area):
+    """
+    Finds the lower-bounding index in the elevation-storage-area table for a given
+    observed elevation (i.e., the index of the largest table elevation <= obs_elev).
+
+    Inputs:
+      elev           -- list of elevation values from the table (ft)
+      obs_elev       -- the observed elevation to locate in the table (ft)
+      elev_stor_area -- the full elevation-storage-area dictionary (used to verify bounding)
+
+    Output:
+      Returns the integer index of the lower-bounding elevation in the table,
+      or -1 if a valid index cannot be determined.
+    """
+    
     # find lower bounding index of where elevation lands in elev-stor-area table
     # Returned index represents lower bounding layer.
 
@@ -173,6 +246,17 @@ def get_elev_layer_idx(elev, obs_elev, elev_stor_area):
     return idx
 
 def get_balance_period(balance_period):
+    """
+    Converts a balance period string to a duration in hours (float).
+
+    Inputs:
+      balance_period -- string describing the time step (e.g., '1Hour', '1Day', '30Min')
+
+    Output:
+      Returns the equivalent period duration in hours as a float.
+      Returns None implicitly if the string does not match any recognized unit.
+    """
+    
     # Convert DSS interval strings into hours.
     
     # Example: "1Hour" -> 1.0
@@ -188,6 +272,19 @@ def get_balance_period(balance_period):
         return float(balance_period.lower().replace('min', '')) / 60
 
 def check_dss_intervals(records, balance_period, currentAlt):
+    """
+    Validates that each DSS record pathname contains the expected time interval string.
+    Exits the compute with an error message if any record does not match.
+
+    Inputs:
+      records        -- list of DSS pathname strings to validate
+      balance_period -- expected time interval string (e.g., '1HOUR') to find in each pathname
+      currentAlt     -- WAT alternative object used for posting error messages to the compute log
+
+    Output:
+      No return value. Calls sys.exit(-1) on the first mismatched record.
+    """
+    
     # Verify DSS pathname intervals match computation interval.
     for r in records:
         
@@ -198,6 +295,24 @@ def check_dss_intervals(records, balance_period, currentAlt):
 
 
 def read_ts_rec_w_optional_fname(dssFm, pathname, starttime_str, endtime_str):
+    """
+    Reads a DSS time-series record, optionally from an alternate DSS file embedded
+    in the pathname using '::' as a separator.
+
+    If the pathname contains '::', the portion before '::' is treated as the DSS file
+    path and a new connection is opened for that file. Otherwise, the provided dssFm
+    connection is used.
+
+    Inputs:
+      dssFm         -- default open HecDss file manager object
+      pathname      -- DSS pathname string, optionally prefixed with 'alt_dss_file::'
+      starttime_str -- start date/time string in HEC format (e.g., '01Jan2014 0000')
+      endtime_str   -- end date/time string in HEC format
+
+    Output:
+      Returns the TimeSeriesContainer data object (.getData()) from the DSS read.
+    """
+    
     '''pathname may contain the dss filepath additionally before the dss ts path, separated by '::'
        If so, use that dss file.'''
        
@@ -229,7 +344,30 @@ def read_ts_rec_w_optional_fname(dssFm, pathname, starttime_str, endtime_str):
 
 def read_inflows_outflows(currentAlt, dss_file, inflow_records, outflow_records, starttime_str, endtime_str,
                           starttime_hectime, endtime_hectime):
+    """
+    Reads and accumulates all inflow and outflow DSS records for a reservoir over the
+    specified time window, trims values outside the window, converts units if needed,
+    and returns the net inflow-minus-outflow time series.
 
+    Inputs:
+      currentAlt        -- WAT scripting alternative object for logging messages
+      dss_file          -- full path to the primary DSS file containing flow records
+      inflow_records    -- list of DSS pathname strings for inflow records (supports '::' alternate file syntax)
+      outflow_records   -- list of DSS pathname strings for outflow records (supports '::' alternate file syntax)
+      starttime_str     -- start date/time string in HEC format (e.g., '01Jan2014 0000')
+      endtime_str       -- end date/time string in HEC format
+      starttime_hectime -- start time as HEC integer value (for trimming)
+      endtime_hectime   -- end time as HEC integer value (for trimming)
+
+    Output:
+      Returns a tuple (times, inflow_outflow) where:
+        times          -- list of HEC integer time values from the first valid inflow record
+        inflow_outflow -- list of net flow values (inflow minus outflow, cfs, period-average),
+                          one value per time step starting at index 1
+      Calls sys.exit(-1) if any record cannot be read.
+    """
+    
+    
     # Open DSS file containing reservoir flow records.
     dssFm = HecDss.open(dss_file)
 
@@ -399,9 +537,38 @@ def read_inflows_outflows(currentAlt, dss_file, inflow_records, outflow_records,
 def predict_elevation(currentAlt, starttime_str, endtime_str, res_name, inflow_records, outflow_records, starting_elevation,
                          elev_stor_area, dss_file, output_dss_record_name, output_dss_file, shared_dir,
                          use_conic=False, alt_period=None, alt_period_string=None, balance_period_str='1Hour'):
-    '''From inflows/outflows, predict hourly elevation, useful for lookback/starting elevation for forecasts starting
-    on arbitrary dates during forecast period
-    '''
+    """
+    Predicts hourly reservoir elevation forward in time from a known starting elevation
+    using a forward mass-balance simulation driven by inflow and outflow DSS records.
+
+    Useful for computing lookback or starting elevations for forecasts that begin on
+    arbitrary dates within a forecast period.
+
+    Inputs:
+      currentAlt             -- WAT scripting alternative object for logging
+      starttime_str          -- simulation start date/time string in HEC format
+      endtime_str            -- simulation end date/time string in HEC format
+      res_name               -- reservoir name string (currently unused in body; reserved for future use)
+      inflow_records         -- list of DSS pathname strings for inflow records
+      outflow_records        -- list of DSS pathname strings for outflow records
+      starting_elevation     -- known reservoir elevation at the simulation start time (ft)
+      elev_stor_area         -- dict with keys 'elev', 'stor', 'area' (lists of floats)
+      dss_file               -- full path to the source DSS file for reading flow records
+      output_dss_record_name -- DSS pathname for the predicted elevation output record
+      output_dss_file        -- full path to the DSS file where outputs are written
+      shared_dir             -- directory path (currently unused; reserved for future diagnostics)
+      use_conic              -- reserved flag for conic interpolation (currently unused, default False)
+      alt_period             -- optional alternate output period in minutes for resampling (default None)
+      alt_period_string      -- string label for the alternate period (e.g., '1Day') (default None)
+      balance_period_str     -- time step string for mass-balance computation (default '1Hour')
+
+    Output:
+      No return value. Writes the following DSS records to output_dss_file:
+        - Predicted elevation time series (ft, INST-VAL) at output_dss_record_name
+        - Predicted storage time series (acre-ft, PER-CUM) with 'STORAGE-PREDICTED' C-part
+        - Optionally, a resampled elevation record at alt_period_string resolution
+    """
+    
     
     # Convert DSS interval string (e.g., "1Hour") into numeric hours.
     balance_period = get_balance_period(balance_period_str) # convert to (float) hours
@@ -444,7 +611,7 @@ def predict_elevation(currentAlt, starttime_str, endtime_str, res_name, inflow_r
     # Step through each timestep of net inflow.
     for i in range(len(inflow_outflow)):
         
-        # Update storage using net flow (CFS → acre-feet conversion).
+        # Update storage using net flow (CFS to acre-feet conversion).
         storage.append( storage[-1] + inflow_outflow[i]*cfs_2_acreft )
         
         # Convert updated storage back to elevation using inverse lookup.
@@ -532,11 +699,44 @@ def create_balance_flows(currentAlt, timewindow, res_name, inflow_records, outfl
                          balance_period_str="1HOUR", use_conic=False, write_evap=False, write_storage=False,
                          alt_period=None,alt_period_string=None, lookback_padding=1440):
 
-    ''' 
-    Compute reservoir mass-balance residuals using: 
-    inflows, outflows, stage changes, and evaporation losses. 
-    Outputs a DSS time series of balance flow residuals. 
-    ''' 
+    """
+    Computes water balance flows for a reservoir and writes results to a DSS file.
+
+    For each time step, the balance flow is computed as:
+      balance_flow = delta_storage_from_stage / dt - (inflow - outflow - evap_loss)
+
+    The result represents the unexplained residual flow needed to close the water balance.
+    Extreme or NaN values at the first and last 24 hours (for hourly models) are set to zero
+    to suppress edge effects from timezone offsets or missing boundary records.
+
+    Inputs:
+      currentAlt             -- WAT scripting alternative object for logging compute messages
+      timewindow             -- WAT run time window object providing start/end time strings
+      res_name               -- reservoir name string (used for CSV diagnostic output naming)
+      inflow_records         -- list of DSS pathnames for inflow time series (cfs, period-avg)
+      outflow_records        -- list of DSS pathnames for outflow time series (cfs, period-avg)
+      stage_record           -- DSS pathname for reservoir stage/elevation (ft, instantaneous)
+      evap_record            -- DSS pathname for evaporation depth (ft, period-accumulated)
+      elev_stor_area         -- dict with keys 'elev', 'stor', 'area' (lists of floats)
+      dss_file               -- full path to the source DSS file for reading stage/evap records
+      output_dss_record_name -- DSS pathname for the output balance flow record
+      output_dss_file        -- full path to the DSS file where output records are written
+      shared_dir             -- directory for CSV diagnostic output
+      storage_dss_record_name-- DSS pathname for optional storage output record (default '')
+      evap_dss_record_name   -- DSS pathname for optional evaporation output record (default '')
+      balance_period_str     -- time step string for balance computation (default '1HOUR')
+      use_conic              -- if True, use conic interpolation for storage; else linear (default False)
+      write_evap             -- if True, write derived evaporation flow to DSS (default False)
+      write_storage          -- if True, write derived storage to DSS (default False)
+      alt_period             -- optional alternate output period in minutes for resampling (default None)
+      alt_period_string      -- string label for the alternate period (e.g., '1Day') (default None)
+      lookback_padding       -- minutes of lookback padding (currently unused; default 1440)
+
+    Output:
+      Returns True on successful completion.
+      Writes balance flow (and optionally evap/storage) DSS records to output_dss_file.
+      Writes a CSV diagnostic file to shared_dir/<res_name>_balance_flow.csv.
+    """ 
     
     #################################################################### 
     # Validate input time series consistency 
@@ -561,7 +761,7 @@ def create_balance_flows(currentAlt, timewindow, res_name, inflow_records, outfl
     # Unit conversion factors 
     ####################################################################
     
-    # Convert CFS over timestep → acre-feet.
+    # Convert CFS over timestep to acre-feet.
     cfs_2_acreft = balance_period * 3600. / 43559.9
     
     # Convert acre-feet back to CFS-equivalent.
@@ -696,7 +896,7 @@ def create_balance_flows(currentAlt, timewindow, res_name, inflow_records, outfl
             # Identify layer index for interpolation.
             idx1 = get_elev_layer_idx(elev_stor_area['elev'], stage_start, elev_stor_area)
             
-            # Convert elevation → storage using conic method.
+            # Convert elevation to storage using conic method.
             storage_start = conic_storage_interp(stage_start, elev_stor_area['elev'], elev_stor_area['area'], conic_storage, idx1)
             idx2 = get_elev_layer_idx(elev_stor_area['elev'], stage_end, elev_stor_area)
             storage_end = conic_storage_interp(stage_end, elev_stor_area['elev'], elev_stor_area['area'], conic_storage, idx2)
@@ -711,20 +911,20 @@ def create_balance_flows(currentAlt, timewindow, res_name, inflow_records, outfl
         ################################################################
 
         # Change in storage over timestep (acre-ft).
-        delta_stor_from_stage = storage_end - storage_start  # in acre-ft
+        delta_stor_from_stage = storage_end - storage_start  
         
         # Convert storage change to equivalent flow (CFS).
-        delta_stor_flow = delta_stor_from_stage * acreft_2_cfs # in cfs
+        delta_stor_flow = delta_stor_from_stage * acreft_2_cfs 
         
         # Net inflow minus outflow from DSS data.
-        inflow_minus_outflow = inflow_outflow[k]  # in cfs
+        inflow_minus_outflow = inflow_outflow[k]  
         
         # Average reservoir surface area for evaporation.
         area_avg = 0.5 * (linear_interpolation(elev_stor_area['elev'], elev_stor_area['area'], stage_start) +
                           linear_interpolation(elev_stor_area['elev'], elev_stor_area['area'], stage_end))
         
-        # Convert evaporation depth → volumetric flow loss.
-        evap_flow_loss = (evap[k] * area_avg) * acreft_2_cfs  # in cfs
+        # Convert evaporation depth to volumetric flow loss.
+        evap_flow_loss = (evap[k] * area_avg) * acreft_2_cfs  
 
         ################################################################ 
         # Mass balance residual 

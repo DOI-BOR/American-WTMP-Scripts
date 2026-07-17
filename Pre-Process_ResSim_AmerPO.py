@@ -52,6 +52,28 @@ reload(DMS_preprocess)
 
 
 def computeAlternative(currentAlternative, computeOptions):
+    """
+    Orchestrate the full computation pipeline for a scripting alternative.
+    Executes two sequential steps to data preprocessing and accumulated
+    depletion computation to for the American River ResSim workflow.
+    Logs the start of the run, delegates to external modules, and
+    returns a success flag only if both steps complete without error.
+    Parameters
+    ----------
+    currentAlternative : Alternative object
+        The scripting alternative being computed. Exposes `.getName()`
+        for identification and `.addComputeMessage()` for logging.
+    computeOptions : ComputeOptions object
+        Run configuration (time windows, simulation parameters, rule
+        sets) passed through to each sub-step.
+    Returns
+    -------
+    result : bool or None
+        True if both preprocessing and accumulated depletion succeed.
+        None (implicit) if either step fails, since no explicit
+        ``return False`` is defined.
+    """
+    
     # Log the start of computation for this scripting alternative.
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName())
     currentAlternative.addComputeMessage('\n')
