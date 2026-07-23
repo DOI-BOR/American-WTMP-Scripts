@@ -188,10 +188,10 @@ def get_decimal_day_of_year(tin):
 def solar_alt_angle(tin):
     """
     Computes the solar altitude angle (degrees above the horizon) for a hardcoded
-    site location (Natoma/Folsom area: 38.1°N, 121.8°W) at a given local datetime.
+    site location (Natoma/Folsom area: 38.1 N, 121.8 W) at a given local datetime.
 
     Uses a simplified astronomical formula based on solar declination, latitude,
-    and the solar hour angle. The time zone reference longitude is set to 120°W
+    and the solar hour angle. The time zone reference longitude is set to 120 W
     (Pacific Standard Time meridian).
 
     NOTE: Latitude, longitude, and time_zone_longitude are currently hardcoded.
