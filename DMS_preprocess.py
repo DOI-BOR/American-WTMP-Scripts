@@ -50,7 +50,26 @@ reload(sdf)
 units_need_fixing = ['tenths','deg','kph','fract'] #'radians',]
 
 def fix_DMS_types_units(dss_file):
-    '''This method was implemented to change data types to PER-AVER that are not coming from the DMS that way'''
+    """
+    Corrects DSS record data types and unit conversions for records sourced from the DMS.
+
+    Iterates all records in the DSS file (skipping metadata and control records) and:
+      - Sets flow and 1-day records (excluding storage) to PER-AVER data type.
+      - For records whose units appear in 'units_need_fixing', creates corrected or
+        duplicate records as follows:
+          * 'tenths' -> fractional (0-1) copy written with units 'FRAC' and '-FRAC'
+                        appended to the parameter name
+          * 'radians'-> degree copy written with units 'deg' and '-DEG' appended
+          * 'deg'    -> radian copy written with units 'radians' and '-RADIANS' appended
+          * 'kph'    -> converted in-place to m/s (divided by 3.6)
+          * 'fract'  -> FRAC copy written, original converted to tenths (multiplied by 10)
+
+    Inputs:
+      dss_file -- full path to the DSS file to be corrected
+
+    Output:
+      No return value. Modifies and writes corrected records in-place in the DSS file.
+    """
     
     # Get sanitized list of DSS records (filtered/cleaned path list)
     recs = DSS_Tools.get_sanitized_record_list(dss_file)
@@ -194,7 +213,21 @@ def fix_DMS_types_units(dss_file):
 
 
 def fix_DMS_types_units_old(dss_file):
-    '''This method was implemented to change data types to PER-AVER that are not coming from the DMS that way'''
+    """
+    Legacy version of fix_DMS_types_units. Performs the same corrections but uses
+    the older HecDss.read()/tsm.getData() pattern instead of dss.get().
+
+    Retained for reference and rollback purposes. Superseded by fix_DMS_types_units,
+    which uses a more direct container access pattern and handles the 'fract' unit type.
+    This version additionally creates a W2-linked copy (divided by 3.6) for m/s wind records,
+    which the current version does not.
+
+    Inputs:
+      dss_file -- full path to the DSS file to be corrected
+
+    Output:
+      No return value. Modifies and writes corrected records in-place in the DSS file.
+    """
     
     # Get sanitized record list
     recs = DSS_Tools.get_sanitized_record_list(dss_file)
@@ -313,8 +346,29 @@ def fix_DMS_types_units_old(dss_file):
 
 
 def standardize_bc_temp_water_to_C(dss_file,output_dss_file):
-    '''Make copies of temp-water records in C (standardizing on C) for ResSim linking'''
-   
+    """
+    Creates Celsius copies of all temp-water DSS records in the input file,
+    converting from Fahrenheit where necessary, to standardize boundary condition
+    temperature units for ResSim linking.
+
+    For each temp-water record found, a new record is written with '-C' appended
+    to the parameter (C-part) of the DSS pathname and units set to 'C'. If the
+    source record is in Fahrenheit ('f' or 'degf'), values are converted using
+    the standard F-to-C formula: C = (F - 32) * 5/9. Records already in Celsius
+    are copied as-is.
+
+    If dss_file and output_dss_file are the same path, the corrections are written
+    back to the same file. Otherwise, output is written to the separate output file.
+
+    Inputs:
+      dss_file        -- full path to the source DSS file containing temp-water records
+      output_dss_file -- full path to the destination DSS file for the standardized records
+                         (may be the same as dss_file for in-place correction)
+
+    Output:
+      No return value. Writes standardized Celsius temperature records to output_dss_file.
+    """
+    
     # Get DSS record list
     recs = DSS_Tools.get_sanitized_record_list(dss_file)
     
@@ -361,6 +415,20 @@ def standardize_bc_temp_water_to_C(dss_file,output_dss_file):
 
 
 def DMS_fix_units_types(hydro_dss,met_dss_file):
+    """
+    Convenience wrapper that applies fix_DMS_types_units to both the hydrology
+    and meteorology DSS files for the American River watershed.
+
+    Ensures both input DSS files have their data types corrected to PER-AVER
+    where needed and their units normalized before any downstream processing begins.
+
+    Inputs:
+      hydro_dss    -- full path to the DMS hydrology DSS file
+      met_dss_file -- full path to the DMS meteorology DSS file
+
+    Output:
+      No return value. Both DSS files are corrected in-place via fix_DMS_types_units.
+    """
     
     # Run unit/type fixes on both hydro and meteorology DSS files
     fix_DMS_types_units(hydro_dss)
@@ -373,25 +441,20 @@ def interp(x, xp, fp, left=None, right=None):
     One-dimensional linear interpolation.
 
     Returns the one-dimensional piecewise linear interpolant to a function
-    with given values at discrete data-points.
+    with given values at discrete data-points. Accepts both scalar and list
+    inputs for x. Extrapolates to boundary values when x falls outside the
+    range of xp.
 
-    Parameters
-    ----------
-    x : array_like
-        The x-coordinates at which to evaluate the interpolated values.
-    xp : 1-D sequence of floats
-        The x-coordinates of the data points, must be increasing.
-    fp : 1-D sequence of floats
-        The y-coordinates of the data points, same length as `xp`.
-    left : float, optional
-        Value to return for `x < xp[0]`, default is `fp[0]`.
-    right : float, optional
-        Value to return for `x > xp[-1]`, default is `fp[-1]`.
+    Inputs:
+      x     -- scalar float or list of floats at which to evaluate the interpolated values
+      xp    -- list of floats; x-coordinates of the data points, must be increasing
+      fp    -- list of floats; y-coordinates of the data points, same length as xp
+      left  -- float (optional); value to return when x < xp[0]; defaults to fp[0]
+      right -- float (optional); value to return when x > xp[-1]; defaults to fp[-1]
 
-    Returns
-    -------
-    y : float or ndarray
-        The interpolated values, same shape as `x`.
+    Output:
+      Returns a float (if x is scalar) or a list of floats (if x is a list)
+      containing the interpolated or extrapolated values at each point in x.
     """
 
     # Handle list input by recursive mapping
@@ -424,20 +487,25 @@ def interp(x, xp, fp, left=None, right=None):
 
 
 def interp_monthly_coeff(coeffs):
-    '''
-    Convert a set of 12 monthly regression coefficients into an
-    hourly coefficient series for an entire leap year (8784 hours).
+    """
+    Converts a list of 12 monthly regression coefficients into a list of 8784
+    hourly coefficient values covering an entire leap year (366 days).
 
-    The regression equations were developed on a monthly basis, but
-    hourly temperature calculations require smoothly varying coefficients.
-    This function linearly interpolates between monthly midpoint values
-    to generate an hourly coefficient record.
+    Monthly coefficients are anchored at the approximate midpoint of each calendar
+    month (in hours from the start of the year). Months with 31 days are shifted
+    by 12 hours toward the true month center. The coefficient sequence is padded
+    at both ends with the December and January values respectively, so that
+    interpolation wraps smoothly across the year boundary.
 
-    Note:
-    - Assumes leap year length (366 days = 8784 hours).
-    - Padding is added at beginning/end so interpolation wraps smoothly
-      between December and January.
-    '''
+    Inputs:
+      coeffs -- list of 12 floats; one regression coefficient value per calendar month
+                (January = index 0, December = index 11)
+
+    Output:
+      Returns a list of 8784 floats containing the linearly interpolated hourly
+      coefficient values for every hour of a leap year.
+    """
+    
     # Approximate midpoint day-of-year for each month.
     month_midpoints = [16, 45, 75, 105, 136, 166, 197, 228, 259, 289, 320, 350]    
     
@@ -466,30 +534,25 @@ def interp_monthly_coeff(coeffs):
     return hourly_coeff
 
 def american_NF_temp_array_hourly(hour, NF_cms, MF_cms, T_air):
-    '''
-    CARDNO/Stantec regression equation for estimating
-    North Fork American River inflow temperature to Folsom Lake.
+    """
+    Estimates North Fork American River inflow water temperature to Folsom Lake
+    at hourly resolution using the CARDNO/Stantec regression equation.
+
+    Monthly regression coefficients are interpolated to hourly values using
+    interp_monthly_coeff before being applied. The regression form is:
+
+        T_water = C0 + C1*log10(NF_flow) + C2*log10(MF_flow) + C3*T_air
 
     Inputs:
-        hour    - hour index within leap year
-        NF_cms  - North Fork flow (cms)
-        MF_cms  - Middle Fork flow (cms)
-        T_air   - air temperature (deg C)
+      hour   -- list of integer hour indices within a leap year (0-8783)
+      NF_cms -- list of floats; North Fork flow values (cms), one per hour index
+      MF_cms -- list of floats; Middle Fork flow values (cms), one per hour index
+      T_air  -- list of floats; air temperature values (deg C), one per hour index
 
-    Returns:
-        Estimated water temperature (deg C)
-
-    Regression form:
-
-        Temp =
-            C0 +
-            C1 * log10(NF_flow) +
-            C2 * log10(MF_flow) +
-            C3 * AirTemp
-
-    Monthly regression coefficients are interpolated
-    to hourly values before application.
-    '''
+    Output:
+      Returns a list of floats containing the estimated water temperature (deg C)
+      at each hour index. Length equals len(hour).
+    """
     
     
     NF_coeff = ([[ 3.774,  5.013,  7.568, 13.929, 19.23 , 22.008, 27.481, 26.076, 19.876, 11.463,  7.827,  3.52],
@@ -517,27 +580,24 @@ def american_NF_temp_array_hourly(hour, NF_cms, MF_cms, T_air):
     return nf_temp
 
 def american_SF_temp_array_hourly(hour, SF_cms, T_air):
-    '''
-    CARDNO/Stantec regression equation for estimating
-    South Fork American River inflow temperature to Folsom Lake.
+    """
+    Estimates South Fork American River inflow water temperature to Folsom Lake
+    at hourly resolution using the CARDNO/Stantec regression equation.
+
+    Monthly regression coefficients are interpolated to hourly values using
+    interp_monthly_coeff before being applied. The regression form is:
+
+        T_water = C0 + C1*log10(SF_flow) + C2*T_air
 
     Inputs:
-        hour    - hour index within leap year
-        SF_cms  - South Fork flow (cms)
-        T_air   - air temperature (deg C)
+      hour   -- list of integer hour indices within a leap year (0-8783)
+      SF_cms -- list of floats; South Fork flow values (cms), one per hour index
+      T_air  -- list of floats; air temperature values (deg C), one per hour index
 
-    Returns:
-        Estimated water temperature (deg C)
-
-    Regression form:
-
-        Temp =
-            C0 +
-            C1 * log10(SF_flow) +
-            C2 * AirTemp
-
-    Monthly coefficients are interpolated to hourly values.
-    '''
+    Output:
+      Returns a list of floats containing the estimated water temperature (deg C)
+      at each hour index. Length equals len(hour).
+    """
     
     # These will later be interpolated from monthly to hourly resolution
     SF_coeff = ([[ 1.956,  3.894,  8.456, 12.605, 19.374, 22.03 , 23.604, 21.761, 17.663, 11.832,  6.521,  3.430],
@@ -563,22 +623,26 @@ def american_SF_temp_array_hourly(hour, SF_cms, T_air):
 
             
 def american_NF_temp_array(month, NF_cms, MF_cms, T_air):
-    '''
-    Monthly version of the CARDNO/Stantec North Fork American
-    River temperature regression.
+    """
+    Estimates North Fork American River inflow water temperature to Folsom Lake
+    at monthly resolution using the CARDNO/Stantec regression equation.
 
-    Unlike the hourly version, this function uses discrete monthly
-    coefficient sets and does not interpolate between months.
+    Unlike the hourly version, this function selects discrete monthly coefficient
+    sets directly without interpolating between months. The regression form is:
+
+        T_water = C0 + C1*log10(NF_flow) + C2*log10(MF_flow) + C3*T_air
 
     Inputs:
-        month   - month number (1-12)
-        NF_cms  - North Fork flow (cms)
-        MF_cms  - Middle Fork flow (cms)
-        T_air   - air temperature (deg C)
+      month  -- list of integers; calendar month numbers (1=January, 12=December),
+                one per data point
+      NF_cms -- list of floats; North Fork flow values (cms), one per data point
+      MF_cms -- list of floats; Middle Fork flow values (cms), one per data point
+      T_air  -- list of floats; air temperature values (deg C), one per data point
 
-    Returns:
-        Estimated water temperature (deg C)
-    '''
+    Output:
+      Returns a list of floats containing the estimated water temperature (deg C)
+      at each data point. Length equals len(month).
+    """
     
     
     # Coefficient tuples per month:
@@ -612,21 +676,25 @@ def american_NF_temp_array(month, NF_cms, MF_cms, T_air):
     return nf_temp
 
 def american_SF_temp_array(month, SF_cms, T_air):
-    '''
-    Monthly version of the CARDNO/Stantec South Fork American
-    River temperature regression.
+    """
+    Estimates South Fork American River inflow water temperature to Folsom Lake
+    at monthly resolution using the CARDNO/Stantec regression equation.
 
-    Uses month-specific coefficients directly rather than
-    interpolating coefficients to hourly resolution.
+    Unlike the hourly version, this function selects discrete monthly coefficient
+    sets directly without interpolating between months. The regression form is:
+
+        T_water = C0 + C1*log10(SF_flow) + C2*T_air
 
     Inputs:
-        month   - month number (1-12)
-        SF_cms  - South Fork flow (cms)
-        T_air   - air temperature (deg C)
+      month  -- list of integers; calendar month numbers (1=January, 12=December),
+                one per data point
+      SF_cms -- list of floats; South Fork flow values (cms), one per data point
+      T_air  -- list of floats; air temperature values (deg C), one per data point
 
-    Returns:
-        Estimated water temperature (deg C)
-    '''
+    Output:
+      Returns a list of floats containing the estimated water temperature (deg C)
+      at each data point. Length equals len(month).
+    """
     
     # Monthly coefficients [C0, C1*(log10(SF)), C2*(AirTemp)]
     SF_coeff = [
@@ -657,22 +725,21 @@ def american_SF_temp_array(month, SF_cms, T_air):
     return sf_temp
 
 def american_SC_temp_array(month):
-    '''
-    South Canal inflow temperature estimate.
+    """
+    Returns estimated South Canal inflow water temperature to Folsom Lake using
+    monthly average values developed by CARDNO/Stantec.
 
-    Unlike NF and SF inflows, no regression equation is used.
-    Instead, monthly average temperatures developed by
-    CARDNO/Stantec are applied.
-
-    Source temperatures are stored in degrees Fahrenheit and
-    converted to Celsius before being returned.
+    No regression equation is used. Stored monthly average temperatures in degrees
+    Fahrenheit are converted to Celsius before being returned.
 
     Inputs:
-        month - month number (1-12)
+      month -- list of integers; calendar month numbers (1=January, 12=December),
+               one per data point
 
-    Returns:
-        Monthly average South Canal temperature (deg C)
-    '''
+    Output:
+      Returns a list of floats containing the estimated South Canal water temperature
+      (deg C) for each data point. Length equals len(month).
+    """
     
     # Monthly average temperatures (deg F) to be converted to deg C
     SC_ave_temp = [
@@ -701,29 +768,41 @@ def american_SC_temp_array(month):
     return sc_temp
 
 def calc_folsom_inflow_temps(currentAlt, rtw, hydro_dss, met_dss_file, output_dss_file,hourly=True):
-    '''
-    Compute estimated Folsom inflow temperatures and write them
-    to DSS records.
+    """
+    Computes estimated Folsom Lake inflow water temperatures for the North Fork (NF),
+    South Fork (SF), and South Canal (SC) tributaries using CARDNO/Stantec regression
+    equations, and writes the resulting temperature time series to DSS records.
 
-    Historical note:
-        This routine is currently unused because measured DMS
-        temperature records are available. It is retained because
-        implementing the regression workflow in Jython required
-        substantial effort and may be useful in the future.
+    NOTE: This function is currently unused because measured DMS temperature records
+    are available. It is retained because the Jython implementation required substantial
+    effort and may be useful in the future.
 
     Workflow:
-        1. Read NF, MF, SF flow records.
-        2. Read Fair Oaks air temperature record.
-        3. Convert units as needed.
-        4. Build month/hour indices.
-        5. Calculate NF, SF, and SC inflow temperatures.
-        6. Write temperature time series to DSS.
+      1. Resolve NF, MF, SF flow and Fair Oaks air temperature DSS record paths.
+      2. Read all four input time series; convert units to cms (flow) and deg C (air temp).
+      3. Decompose HEC timestamps into month, day, and hour indices.
+      4. Compute NF temperature via american_NF_temp_array_hourly.
+      5. Compute SF temperature via american_SF_temp_array_hourly.
+      6. Compute SC temperature via american_SC_temp_array (monthly averages).
+      7. Write all three temperature time series to the output DSS file.
 
-    Output records:
-        /Folsom/NF Inflow/Temp-Water/
-        /Folsom/SF Inflow/Temp-Water/
-        /Folsom/SC Inflow/Temp-Water/
-    '''
+    Inputs:
+      currentAlt      -- WAT scripting alternative object for logging compute messages
+      rtw             -- WAT run time window object providing start/end time strings
+      hydro_dss       -- full path to the DMS hydrology DSS file (source flow records)
+      met_dss_file    -- full path to the DMS meteorology DSS file (source air temp record)
+      output_dss_file -- full path to the pre-process DSS file where results are written
+      hourly          -- if True, reads and writes 1-hour records; if False, uses 1-day
+                         records (default True; note: paths are currently overridden to
+                         hourly regardless of this flag)
+
+    Output:
+      No return value. Writes the following DSS records to output_dss_file:
+        - /Folsom/NF Inflow/Temp-Water//<period>/ResSim_PreProcess/   (deg C, PER-AVER)
+        - /Folsom/SF Inflow/Temp-Water//<period>/ResSim_PreProcess/   (deg C, PER-AVER)
+        - /Folsom/SC Inflow/Temp-Water//<period>/ResSim_PreProcess/   (deg C, PER-AVER)
+      Calls sys.exit(-1) if any input record cannot be read or has unrecognized units.
+    """
     
     # Gather time window (start/end) in both string and HEC integer time formats
     starttime_str = rtw.getStartTimeString()
@@ -758,7 +837,7 @@ def calc_folsom_inflow_temps(currentAlt, rtw, hydro_dss, met_dss_file, output_ds
     AT = '::'.join([met_dss_file,'/MR Am.-Natoma Lake/Fair Oaks-Air Temp/Temp-Air//1hour/251.40.53.1.1/'])
     output_period = '1Hour'
 
-    # Read inputs from DSS; convert units as needed (air temp FtoC, flow cfstocms)
+    # Read inputs from DSS; convert units as needed (air temp F to C, flow cfs to cms)
     print('Reading inflows')
     inputs = []
     
@@ -855,31 +934,34 @@ def calc_folsom_inflow_temps(currentAlt, rtw, hydro_dss, met_dss_file, output_ds
 
 
 def compute_folsom_flows(currentAlternative, rtw, hydro_dss, output_dss_file):
-    # Add Mormon Ravine and Newcastle PP flows (there is one inflow designed for these in ResSim)
-    '''
-    Generate derived flow records needed by downstream
-    ResSim and CE-QUAL-W2 workflows.
+    """
+    Computes and writes derived flow records needed by the downstream ResSim and
+    CE-QUAL-W2 Folsom Lake workflows.
 
-    Major calculations:
+    Specifically:
+      1. Sums Newcastle Powerplant and Mormon Ravine daily flows into a combined
+         inflow record (MormonR_NewcastlePP_Sum).
+      2. Resamples monthly ARPS diversion flows to daily resolution.
+      3. Computes North Arm inflow as: Lake Clementine + Foresthill - ARPS.
+      4. Sums upper-elevation Folsom outlet releases (G1 - G4) and enforces a 4 cfs minimum.
+      5. Sums lower-elevation Folsom outlet releases (G5 - G8) and enforces a 4 cfs minimum.
+      6. Sums Natoma powerhouse unit releases (U1 + U2) into a combined generation record.
 
-    1. Combine Newcastle Powerplant and Mormon Ravine flows.
+    Inputs:
+      currentAlternative -- WAT scripting alternative object for logging and context
+      rtw                -- WAT run time window object providing start/end time strings
+      hydro_dss          -- full path to the DMS hydrology DSS file (source records)
+      output_dss_file    -- full path to the pre-process DSS file where results are written
 
-    2. Calculate North Arm inflow:
-           Lake Clementine +
-           Foresthill -
-           American River Pump Station (ARPS)
-
-    3. Sum upper-elevation Folsom outlet releases
-       (G1-G4).
-
-    4. Sum lower-elevation Folsom outlet releases
-       (G5-G8).
-
-    5. Sum Natoma powerhouse releases.
-
-    Several records are written to the preprocessing DSS
-    database for later model use.
-    '''
+    Output:
+      No return value. Writes the following DSS records to output_dss_file:
+        - MormonR_NewcastlePP_Sum  (1-day, CFS)
+        - ARPS flow resampled      (1-day, from monthly)
+        - North Arm inflow         (1-day, CFS)
+        - Upper_River_Outlets_Sum_min4  (1-hour, CFS, minimum 4 cfs enforced)
+        - Lower_River_Outlets_Sum_min4  (1-hour, CFS, minimum 4 cfs enforced)
+        - NAT-Gen Release Sum      (1-hour, CFS)
+    """
     
     # Combine daily flows for the two upstream contributors
     inflow_records = ['/MR Am.-Folsom Lake/11425416 Newcastle PP-Daily Flow/Flow//1Day/250.114.125.1.1/',
@@ -939,35 +1021,47 @@ def compute_folsom_flows(currentAlternative, rtw, hydro_dss, output_dss_file):
 
 
 def compute_plotting_records(currentAlternative, rtw, hydro_dss, output_dss_file):
-    '''
-    Placeholder for creation of plotting and diagnostic records.
+    """
+    Placeholder function for computing additional DSS records used for plotting
+    and diagnostic purposes.
 
-    Currently no implementation exists.
+    Currently contains no implementation. Intended future uses include derived
+    QA/QC records, plot-friendly summary time series, and model diagnostic outputs.
 
-    Intended future purpose:
-        - Derived QA/QC records
-        - Plot-friendly summary time series
-        - Model diagnostic outputs
-    '''
+    Inputs:
+      currentAlternative -- WAT scripting alternative object (reserved for future use)
+      rtw                -- WAT run time window object (reserved for future use)
+      hydro_dss          -- full path to the DMS hydrology DSS file (reserved for future use)
+      output_dss_file    -- full path to the pre-process DSS file (reserved for future use)
+
+    Output:
+      No return value. Currently a no-op (pass).
+    """
     
     pass
 
 
 def preprocess_W2_American(currentAlternative, computeOptions):
-    '''
-    Preprocessing workflow used by the CE-QUAL-W2
-    American River modeling framework.
+    """
+    Orchestrates the pre-processing workflow for the CE-QUAL-W2 American River
+    modeling framework.
 
-    Responsibilities:
-        - Establish project/run directories.
-        - Locate hydro and meteorological DSS databases.
-        - Standardize DSS units/types.
-        - Generate derived Folsom flow records.
-        - Generate plotting records.
+    Steps:
+      1. Resolves the run time window, project directory, and shared DSS file paths.
+      2. Applies fix_DMS_types_units to both the hydrology and meteorology DSS files.
+      3. Calls compute_folsom_flows to generate derived Folsom inflow/outflow records.
+      4. Calls compute_plotting_records (currently a no-op placeholder).
+
+    Inputs:
+      currentAlternative -- WAT scripting alternative object providing the alternative name,
+                            time step, and compute message logging interface
+      computeOptions     -- WAT compute options object providing the run time window
+                            and run directory
 
     Output:
-        DMS_American_Pre-Process.dss
-    '''
+      No explicit return value. Writes pre-processed DSS records to:
+        shared/DMS_American_Pre-Process.dss
+    """
     
     # Retrieve the run time window from compute options
     rtw = computeOptions.getRunTimeWindow()
@@ -999,30 +1093,36 @@ def preprocess_W2_American(currentAlternative, computeOptions):
 
 
 def preprocess_ResSim_American(currentAlternative, computeOptions):
-    '''
-    Main preprocessing routine for the American River
-    ResSim workflow.
+    """
+    Orchestrates the pre-processing workflow for the HEC-ResSim American River
+    modeling framework.
 
-    Responsibilities:
+    Steps:
+      1. Resolves the run time window, project directory, and shared DSS file paths.
+      2. Applies fix_DMS_types_units to both the hydrology and meteorology DSS files.
+      3. Converts all temp-water records to Celsius via standardize_bc_temp_water_to_C.
+      4. Creates constant zero/one placeholder DSS records for flow, temperature, gate,
+         and evaporation parameters at both daily and hourly resolution.
+      5. Calls compute_folsom_flows to generate derived Folsom inflow/outflow records.
+      6. Calls compute_plotting_records (currently a no-op placeholder).
 
-        1. Identify project and DSS file locations.
-        2. Standardize DMS units and record types.
-        3. Convert water temperatures to Celsius.
-        4. Create standard zero/one DSS template records
-           used by model logic.
-        5. Generate derived Folsom flow records.
-        6. Generate plotting records.
+    Inputs:
+      currentAlternative -- WAT scripting alternative object providing the alternative name,
+                            time step, and compute message logging interface
+      computeOptions     -- WAT compute options object providing the DSS filename,
+                            run time window, and run directory
 
-    Creates supporting records such as:
-        - Zero flow series
-        - Zero temperature series
-        - Zero gate series
-        - One gate series
-        - Zero evaporation series
-
-    Returns:
-        True on successful completion.
-    '''
+    Output:
+      Returns True on successful completion.
+      Writes pre-processed DSS records to:
+        shared/DMS_American_Pre-Process.dss
+      Constant placeholder records written include:
+        - Zero flow       (PER-AVER, 1DAY and 1HOUR)
+        - Zero temp-water (PER-AVER, 1DAY and 1HOUR)
+        - Zero gate       (INST-VAL, 1HOUR)
+        - One gate        (INST-VAL, 1HOUR)
+        - Zero evap       (PER-AVER, 1DAY)
+    """
     
     # Retrieve input DSS filename (main input source for ResSim)
     dss_file = computeOptions.getDssFilename()

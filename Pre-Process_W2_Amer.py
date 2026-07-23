@@ -43,6 +43,33 @@ reload(cbfj)
 shutter_links = ['init_elev_shutter_1','init_elev_shutter_2','init_elev_shutter_3']
 
 def computeAlternative(currentAlternative, computeOptions):
+    """
+    Orchestrate the CE-QUAL-W2 Folsom forecast preprocessing pipeline.
+    Prepares all input files, DSS records, boundary conditions, and
+    restart configurations needed to run a CE-QUAL-W2 temperature
+    forecast of Folsom Reservoir on the American River.  Steps include
+    resolving the alternative name, fixing DSS metadata, converting
+    storage to elevation, building target-temperature schedules,
+    generating outlet flow files, writing constant placeholder records,
+    deriving initial shutter positions, and updating W2 control files.
+    Parameters
+    ----------
+    currentAlternative : Alternative object
+        The scripting alternative being computed.  Exposes
+        ``.getName()``, ``.addComputeMessage()``, and
+        ``.getInputDataLocations()`` for identification, logging,
+        and reading configured input data links.
+    computeOptions : ComputeOptions object
+        Run configuration carrying the runtime window, run directory,
+        and simulation name.  Exposes ``.getRunTimeWindow()``,
+        ``.getRunDirectory()``, and ``.getSimulationName()``.
+    Returns
+    -------
+    result : bool or None
+        True if both the target-temperature schedule write and the
+        seven-outlet flow generation succeed.  None (implicit) if
+        either step fails.
+    """
     
     # Log the start of computation for this scripting alternative.
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName())

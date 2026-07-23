@@ -12,6 +12,32 @@ import tz_offset
 reload(tz_offset)
 
 def organizeLocations(currentAlternative, locations):
+    """
+    Organizes a flat list of WAT data location objects into a list of
+    [flow_path, temperature_path] pairs by resolving and correcting
+    the DSS pathname for each location.
+
+    Locations are expected to be ordered as alternating flow/temperature
+    pairs (index 0 = flow, index 1 = temperature, index 2 = flow, etc.).
+    If the total number of locations is odd, the function logs an error
+    and calls sys.exit(1).
+
+    DSS pathnames are resolved using currentAlternative.loadTimeSeries()
+    and corrected via DSS_Tools.fixInputLocationFpart() to match the
+    current alternative's input F-part context.
+
+    Inputs:
+      currentAlternative -- WAT scripting alternative object for logging
+                            and resolving linked time-series paths
+      locations          -- list of WAT DataLocation objects in alternating
+                            flow/temperature order; length must be even
+
+    Output:
+      Returns a list of 2-element lists, each of the form
+      [flow_dss_path, temp_dss_path], where each element is a corrected
+      DSS pathname string. Length equals len(locations) // 2.
+      Calls sys.exit(1) if the number of locations is odd.
+    """
     
     # Initialize list that will store flow/temperature DSS path pairs
     locations_list = []
@@ -43,6 +69,20 @@ def organizeLocations(currentAlternative, locations):
 
 
 def flow_in_cfs(units,flows):
+    """
+    Converts a list of flow values to cubic feet per second (CFS), applying a
+    unit conversion from cubic meters per second (CMS) if necessary.
+
+    Inputs:
+      units -- string; the units label of the source flow record (e.g., 'cfs', 'cms');
+               comparison is case-insensitive
+      flows -- list of floats; flow values in the units specified by the units argument
+
+    Output:
+      Returns a list of floats containing flow values in CFS.
+      Calls sys.exit(-1) if the units string is not recognized ('cfs' or 'cms').
+    """
+    
     # No conversion needed when flow data is already in cfs
     if units.lower()=='cfs':
         return flows
@@ -63,6 +103,21 @@ def flow_in_cfs(units,flows):
         sys.exit(-1)
 
 def temperature_in_C(units,temps):
+    """
+    Converts a list of temperature values to degrees Celsius (C), applying a
+    Fahrenheit-to-Celsius conversion if necessary.
+
+    Inputs:
+      units -- string; the units label of the source temperature record
+               (e.g., 'C', 'deg C', 'F', 'deg F'); comparison is case-insensitive
+      temps -- list of floats; temperature values in the units specified by the
+               units argument
+
+    Output:
+      Returns a list of floats containing temperature values in degrees Celsius.
+      Calls sys.exit(-1) if the units string is not recognized.
+    """
+    
     # No conversion needed when temperatures are already Celsius
     if units.lower()=='c' or units.lower()=='deg c':
         return temps
@@ -83,6 +138,49 @@ def temperature_in_C(units,temps):
 
 def FWA2(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=None, bad_data_fill_tempC=None, 
          last_override=False,return_tsc=False):
+    """
+    Computes a flow-weighted average temperature (FWAT) from multiple DSS
+    flow/temperature record pairs and writes the result to a DSS record.
+
+    For each time step, valid flow/temperature pairs are identified by applying
+    the following filters:
+      - Neither flow nor temperature is NaN
+      - Flow is greater than cfs_limit (default 0.0) and less than 9e6 CFS
+      - Temperature is between 0.0 and 80.0 deg C
+
+    The flow-weighted average is computed as:
+        FWAT[i] = sum(flow[i] * temp[i]) / sum(flow[i])
+
+    When no valid pairs exist at a time step, the fill value (bad_data_fill_tempC
+    or UNDEFINED_DOUBLE) is used. Optionally, the last DSS pair's temperature can
+    override the weighted average when its flow and temperature pass the same filters.
+
+    This is an improved replacement for FWA, which was producing unexpected results.
+
+    Inputs:
+      currentAlt          -- WAT scripting alternative object for logging
+      dssFile             -- full path to the DSS file for reading and writing
+      timewindow          -- WAT run time window object providing start/end time strings
+      DSSPaths_list       -- list of 2-element lists, each [flow_dss_path, temp_dss_path];
+                             flow units converted from CMS to CFS automatically;
+                             temperature units converted from F to C automatically
+      outputname          -- DSS pathname string for the output FWAT record
+      cfs_limit           -- float; minimum flow threshold in CFS below which a pair is
+                             excluded from the weighted average (default None = 0.0)
+      bad_data_fill_tempC -- float; temperature value used when no valid pairs exist at
+                             a time step (default None = UNDEFINED_DOUBLE)
+      last_override       -- bool; if True, the last DSS pair's temperature overrides the
+                             weighted average when it passes the flow/temperature filters
+                             (default False)
+      return_tsc          -- bool; if True, returns the populated TimeSeriesContainer
+                             instead of 0 (default False)
+
+    Output:
+      Writes the FWAT time series to dssFile at outputname.
+      Returns the populated TimeSeriesContainer if return_tsc is True.
+      Returns 0 on successful completion if return_tsc is False.
+      Calls sys.exit(-1) if flow and temperature record lengths do not match.
+    """
     
     # Flow-weighted average temperature calculation with improved validation
     '''
@@ -237,6 +335,35 @@ def FWA2(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=N
         return 0
 
 def FWA(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=None):
+    """
+    Computes a flow-weighted average temperature (FWAT) from multiple DSS
+    flow/temperature record pairs and writes the result to a DSS record.
+
+    For each DSS pair, flow*temperature products are computed at each time step.
+    Flows below cfs_limit are set to zero before weighting. The final FWAT is:
+        FWAT[i] = sum(flow[i] * temp[i]) / sum(flow[i])
+
+    NaN flow-temperature products from any pair are skipped during summation.
+    When total flow at a time step is zero, UNDEFINED_DOUBLE is written.
+
+    NOTE: This function was producing unexpected results and has been superseded
+    by FWA2. It is retained for reference and backward compatibility.
+
+    Inputs:
+      currentAlt    -- WAT scripting alternative object for logging
+      dssFile       -- full path to the DSS file for reading and writing
+      timewindow    -- WAT run time window object providing start/end time strings
+      DSSPaths_list -- list of 2-element lists, each [flow_dss_path, temp_dss_path];
+                       CMS flows are converted to CFS automatically
+      outputname    -- DSS pathname string for the output FWAT record
+      cfs_limit     -- float; flows below this threshold are zeroed out before weighting
+                       (default None = no threshold applied)
+
+    Output:
+      Writes the FWAT time series to dssFile at outputname.
+      Returns 0 on successful completion.
+      Logs the number of values written to the compute message log.
+    """
     
     # Extract DSS time window strings for reading data
     starttime_str = timewindow.getStartTimeString()
@@ -406,6 +533,44 @@ def FWA(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=No
 
 # DAILY FLOW-WEIGHTED AVERAGE TEMPERATURE FUNCTION
 def FWA_Daily(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=None,delay_days=0):
+    """
+    Computes a daily flow-weighted average temperature (FWAT) from multiple DSS
+    sub-daily flow/temperature record pairs and writes a daily output record to DSS.
+
+    For each DSS pair, sub-daily flow and temperature values are grouped into 24-hour
+    windows anchored at the HEC '24' hour boundary. Within each daily window, the
+    flow-weighted temperature contribution is computed as:
+        FWTemp_daily = sum(flow[i] * temp[i]) / sum(flow[i])
+
+    Daily contributions from all DSS pairs are then combined:
+        FWAT_daily[d] = sum(FWTemp[d] * DailyFlow[d]) / sum(DailyFlow[d])
+
+    When the total daily flow sum is less than 24.0 CFS, UNDEFINED_DOUBLE is written
+    for that day to avoid meaningless results from very low-flow periods.
+
+    An optional start delay (delay_days) advances the read window start to account
+    for routing travel time.
+
+    NOTE: This function has known issues and has been superseded by FWA2_Daily.
+    It is retained for reference.
+
+    Inputs:
+      currentAlt    -- WAT scripting alternative object for logging
+      dssFile       -- full path to the DSS file for reading and writing
+      timewindow    -- WAT run time window object providing start/end time strings
+      DSSPaths_list -- list of 2-element lists, each [flow_dss_path, temp_dss_path];
+                       CMS flows are converted to CFS automatically
+      outputname    -- DSS pathname string for the daily output FWAT record
+      cfs_limit     -- float; flows below this threshold are zeroed out before
+                       weighting (default None = no threshold applied)
+      delay_days    -- int; number of days to advance the start of the read window
+                       (default 0)
+
+    Output:
+      Writes the daily FWAT time series (deg C) to dssFile at outputname.
+      Returns 0 on successful completion.
+      Logs the number of values written to the compute message log.
+    """
     
     # Convert start time string and optionally apply delay
     starttime_str = timewindow.getStartTimeString()
@@ -616,6 +781,17 @@ def FWA_Daily(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_li
 
 # SIMPLE TEMPERATURE CONVERSION UTILITY
 def F_to_C(t,is_in_F):
+    """
+    Converts a single temperature value from Fahrenheit to Celsius if needed.
+
+    Inputs:
+      t       -- float; temperature value to convert
+      is_in_F -- bool; if True, applies the Fahrenheit-to-Celsius conversion;
+                  if False, returns the value unchanged
+
+    Output:
+      Returns a float representing the temperature in degrees Celsius.
+    """
     
     # Convert Fahrenheit to Celsius if needed
     if is_in_F:
@@ -625,7 +801,44 @@ def F_to_C(t,is_in_F):
         return t
 
 def FWA2_Daily(currentAlt, dssFile, timewindow, DSSPaths_list, outputname, cfs_limit=-1,delay_days=0,delay_hours=0):
-    '''FWA_Daily is not working so I made this one'''
+    """
+    Computes a daily flow-weighted average temperature (FWAT) from multiple DSS
+    sub-daily flow/temperature record pairs and writes a 1-day output record to DSS.
+
+    Sub-daily flow and temperature values are grouped into calendar days using
+    timezone-corrected Python datetime objects (via tz_offset.timedelta). Within
+    each daily bin, valid flow/temperature pairs are accumulated:
+      - Flow must be greater than cfs_limit
+      - Temperature must be between 0.0 and 120.0 deg C (or F before conversion)
+
+    The daily FWAT is computed as:
+        FWAT[d] = sum(flow[i] * temp_C[i]) / sum(flow[i])   for all i in day d
+
+    When total daily flow is zero, UNDEFINED_DOUBLE is written for that day.
+
+    This function supersedes FWA_Daily, which had known aggregation issues.
+
+    Inputs:
+      currentAlt    -- WAT scripting alternative object for logging
+      dssFile       -- full path to the DSS file for reading and writing
+      timewindow    -- WAT run time window object providing start/end time strings
+      DSSPaths_list -- list of 2-element lists, each [flow_dss_path, temp_dss_path];
+                       CMS flows are converted to CFS via a scalar multiplier;
+                       Fahrenheit temperatures are converted to Celsius via F_to_C
+      outputname    -- DSS pathname string for the daily output FWAT record
+      cfs_limit     -- float; minimum flow threshold in CFS; time steps with flow
+                       at or below this value are excluded from the weighted average
+                       (default -1 = include all positive flows)
+      delay_days    -- int; number of days to advance the read window start
+                       (default 0)
+      delay_hours   -- int; additional hours to advance the read window start
+                       alongside delay_days (default 0)
+
+    Output:
+      Writes the daily FWAT time series (deg C, derived from the 1-day resampled
+      template of the first temperature record) to dssFile at outputname.
+      Returns 0 on successful completion.
+    """
     
     # Get start and end time strings from time window
     starttime_str = timewindow.getStartTimeString()

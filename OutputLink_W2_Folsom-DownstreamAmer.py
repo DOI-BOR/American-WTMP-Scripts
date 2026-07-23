@@ -73,15 +73,27 @@ OutputLocs = [
 
 
 def snap_folsom_elev(elev_in):
-    '''
-    Plotting routines expect exact intake elevation values in order to
-    correctly identify shutter positions.
+    """
+    Maps a Folsom Dam intake elevation (ft) to the nearest known operational
+    shutter intake elevation, removing small floating-point variations introduced
+    by the CE-QUAL-W2 model output.
 
-    W2 output elevations may contain small floating-point variations.
-    This function snaps elevations to known operational intake elevations
-    used by Folsom so downstream plotting and analysis can reliably
-    distinguish shutter configurations.
-    '''
+    Downstream plotting and analysis tools identify shutter configurations by
+    comparing elevations to fixed reference values. Without snapping, minor
+    floating-point drift in W2 output can cause misidentification.
+
+    Inputs:
+      elev_in -- float; Folsom intake elevation in feet (converted from W2 meters output)
+
+    Output:
+      Returns a float representing the snapped operational intake elevation (ft):
+        >= 395 ft -> 401.0 ft  (all shutters installed)
+        >= 355 ft -> 362.0 ft  (one shutter removed)
+        >= 346 ft -> 349.0 ft  (deganged-middle shutter)
+        >= 320 ft -> 336.0 ft  (intermediate configuration)
+        >= 300 ft -> 307.0 ft  (lower / penstock configuration)
+        <  300 ft -> elev_in   (passthrough; no defined snap position)
+    """
     
     if elev_in >= 395.:
         return 401.0
@@ -98,30 +110,34 @@ def snap_folsom_elev(elev_in):
 
                 
 def read_str_csv(csv_file_path):
-    '''
-    Reads a W2 Folsom structure (*.str) CSV output file.
+    """
+    Reads a CE-QUAL-W2 Folsom structure output file (str_br1.csv) and returns
+    Julian day, snapped shutter elevations for three penstocks, bypass flow,
+    and a revised Penstock 1 flow that accounts for the W2 bypass mode.
 
-    Extracts:
-      - Julian day
-      - Penstock shutter elevations
-      - Bypass flow
-      - Revised Penstock 1 flow
+    In W2 bypass mode, Penstock 1 is repurposed as a bypass outlet by lowering
+    its intake elevation to exactly 64.01 m. When this occurs:
+      - The flow reported in column 8 (Penstock 1) is added to column 13 (bypass)
+        to produce the total bypass flow.
+      - The revised Penstock 1 flow is set to zero (it is no longer a penstock).
 
-    Special handling:
+    Shutter elevations are converted from meters to feet and snapped to known
+    operational values using snap_folsom_elev. The first two rows are header rows
+    and are skipped.
 
-    In W2 forecast mode, when bypass is allowed and required,
-    Penstock 1 is repurposed as a bypass by lowering its intake
-    elevation to exactly 64.01 m.
+    Inputs:
+      csv_file_path -- full path to the W2 structure output CSV file (str_br1.csv)
 
-    When this occurs:
-      - Penstock 1 flow is effectively bypass flow.
-      - Flow originally reported in Penstock 1 must be added to
-        the reported bypass flow.
-      - Revised Penstock 1 flow becomes zero.
-
-    Normal bypass flow is reported in column 13.
-    Penstock 1 flow is reported in column 8.
-    '''
+    Output:
+      Returns a tuple (jday, sElev1, sElev2, sElev3, bypassFlow, revisedPenstock1Flow)
+      where each element is a list of floats with one entry per output time step:
+        jday                 -- Julian day of each output row
+        sElev1               -- snapped Penstock 1 intake elevation (ft)
+        sElev2               -- snapped Penstock 2 intake elevation (ft)
+        sElev3               -- snapped Penstock 3 intake elevation (ft)
+        bypassFlow           -- total bypass flow (CMS; includes Penstock 1 flow in bypass mode)
+        revisedPenstock1Flow -- Penstock 1 flow (CMS; zero when bypass mode is active)
+    """
     
     
     strReader = csv.reader(open(csv_file_path), delimiter=',', quotechar='|')
@@ -158,18 +174,27 @@ def read_str_csv(csv_file_path):
     return jday,sElev1,sElev2,sElev3,bypassFlow,revisedPenstock1Flow
 
 def read_storage_csv(csv_file_path):
-    '''
-    Reads W2 volume/storage output file.
+    """
+    Reads a CE-QUAL-W2 reservoir volume/storage output file (VOLUME_WB1.OPT) and
+    returns Julian day, total storage, and two temperature-stratified storage
+    volumes, all converted from cubic meters to acre-feet.
 
-    Returns:
-      - Julian day
-      - Total reservoir storage
-      - Storage below 52F
-      - Storage below 60F
+    The file is space-delimited with two header rows that are skipped. Column
+    assignments are: [0] Julian day, [1] total storage, [2] storage below 52 deg F,
+    [3] storage below 60 degF.
 
-    Units are converted from cubic meters to acre-feet because
-    downstream plotting and DSS workflows expect acre-feet.
-    '''
+    Inputs:
+      csv_file_path - full path to the W2 volume output file (VOLUME_WB1.OPT)
+
+    Output:
+      Returns a tuple (jday, storage, storage_lt_52, storage_lt_60) where each
+      element is a list of floats with one entry per output time step (acre-ft):
+        jday          - Julian day of each output row
+        storage       - total reservoir storage (acre-ft)
+        storage_lt_52 - storage volume below 52 degF (acre-ft)
+        storage_lt_60 - storage volume below 60 degF (acre-ft)
+    """
+    
     # factor to convert to ac-ft 
     m3_to_acft = 0.000810714 
     
@@ -201,12 +226,12 @@ def write_shutter_elevations_to_output_dss(str_csv,vol_csv,dss_file,output_tsc):
     shutter data onto the DSS output time grid before writing.
 
     Outputs include:
-      - Shutter elevations (Penstocks 1-3)
-      - Bypass flow
-      - Revised Penstock 1 flow
-      - Reservoir storage
-      - Storage below 52F
-      - Storage below 60F
+      - Shutter elevations (Penstocks 1-3) (ELEV, ft)
+      - Bypass flow (FLOW, CMS)
+      - Revised Penstock 1 flow (FLOW, CMS)
+      - Reservoir storage (STOR, acre-ft)
+      - Storage below 52F (STOR, acre-ft)
+      - Storage below 60F (STOR, acre-ft)
 
     output_tsc is used as a template container for DSS writes and
     provides the appropriate W2 forecast F-part.
@@ -275,30 +300,27 @@ def write_shutter_elevations_to_output_dss(str_csv,vol_csv,dss_file,output_tsc):
 
 def merge_data_nearest_jday(jday1, jday2, data2, jd1_offset=0):
     """
-    Maps data from one Julian-day time grid onto another.
+    Maps values from a source Julian-day time grid (jday2/data2) onto a target
+    time grid (jday1) using a nearest-forward lookup.
 
-    For each date in jday1, the function finds the first date in
-    jday2 that is greater than or equal to it and assigns the
-    corresponding value from data2.
+    For each Julian day in jday1, the function finds the first Julian day in jday2
+    that is greater than or equal to it and assigns the corresponding data2 value.
+    This is a forward-fill nearest-neighbor approach, not an interpolation.
 
-    This is effectively a nearest-forward lookup rather than
-    interpolation.
+    When no jday2 value satisfies the condition for a given jday1 entry (i.e., jday1
+    extends beyond the end of jday2), the corresponding output value will be None.
 
-    Args:
-        jday1:
-            Target time grid.
+    Inputs:
+      jday1      -- list of floats; target time grid (Julian days) to map data onto
+      jday2      -- list of floats; source time grid (Julian days) of the input data
+      data2      -- list of floats; source values corresponding to jday2; same length as jday2
+      jd1_offset -- float; optional offset added to jday1 values before lookup,
+                    used for timezone corrections (default 0)
 
-        jday2:
-            Source time grid.
-
-        data2:
-            Source values corresponding to jday2.
-
-        jd1_offset:
-            Optional offset (days) for timezone corrections.
-
-    Returns:
-        List of values aligned to jday1.
+    Output:
+      Returns a list with the same length as jday1, containing values from data2
+      aligned to the jday1 time grid. Entries where no matching jday2 value was
+      found will be None.
     """
 
     # Create a list to hold the ouput data
@@ -331,6 +353,25 @@ def merge_data_nearest_jday(jday1, jday2, data2, jd1_offset=0):
     
 
 def rectify_tsc_dates_to_model_year(tsc,model_year):
+    """
+    Replaces the year component of all timestamps in a TimeSeriesContainer
+    with a specified model year, preserving month, day, and time-of-day.
+
+    This is needed when reading schedule temperature records from a library DSS
+    file that may contain timestamps from a different year than the current
+    forecast. DSS writes can fail silently when timestamps are malformed, so
+    this function ensures all timestamps are valid for the forecast year before
+    the container is written.
+
+    Inputs:
+      tsc        -- HEC TimeSeriesContainer object whose timestamps are to be updated
+      model_year -- integer; the four-digit calendar year to substitute into all
+                    timestamps
+
+    Output:
+      Returns the modified TimeSeriesContainer with all timestamps updated to
+      model_year and startTime set to the first updated timestamp.
+    """
     '''
     Replaces the year component of all timestamps in a
     TimeSeriesContainer.
@@ -358,12 +399,25 @@ def rectify_tsc_dates_to_model_year(tsc,model_year):
     return tsc
 
 def write_constant_1day_ts(dssFm,rec,rtw,constant_value):
-    '''
-    Writes a 24-hour hourly constant-value time series to DSS.
+    """
+    Writes a 24-hour constant-value time series (one value per hour, hourly interval)
+    to a DSS file using an open HecDss file handle.
 
-    Used for parameters that require a complete day of values but
-    are represented by a single constant.
-    '''
+    Used to expose scalar values such as the selected ATSP schedule number as a
+    DSS time series so that reporting tools can read them in a standard format.
+    The time series starts at the run time window start time and spans 24 hourly
+    time steps. Units are set to '#' (dimensionless count) and type to INST-VAL.
+
+    Inputs:
+      dssFm          -- open HecDss file handle to write the record into
+      rec            -- DSS pathname string for the output record
+      rtw            -- WAT run time window object providing the start time string
+      constant_value -- float or int; the constant value to fill all 24 time steps
+
+    Output:
+      No return value. Writes one 24-step hourly INST-VAL DSS record to dssFm
+      at the pathname specified by rec.
+    """
     
     starttime_str = rtw.getStartTimeString()
 
@@ -393,17 +447,26 @@ def write_constant_1day_ts(dssFm,rec,rtw,constant_value):
     dssFm.put(tsc)
 
 def nSchedule_from_AutoRunTempLog(model_run_dir_Folsom):
-    '''
+    """
     Reads AutoRunTempLog.opt and returns the last valid ATSP
     schedule used during the compliance season (May 1 to Nov 30).
 
-    File format:
-        JDAY,JDAYG,Temp_outlet,Temp_target,
-        Flow_outlet,Column_#_TTarget,IAUTOC
+    The AutoRunTempLog.opt file records the schedule loaded at each time step during
+    iterative W2 simulations. The function scans all rows and returns the schedule
+    number from the last row whose Julian day is at or before 333 (approximately
+    Nov 30), ignoring the reload that occurs after the season ends on day 334.
 
-    The final valid schedule prior to approximately Dec 1
-    (Julian day 333) is used.
-    '''
+    This is the preferred method for determining the active schedule. Use this
+    function instead of nSchedule_from_TEMP_LOG.
+
+    Inputs:
+      model_run_dir_Folsom -- full path to the CE-QUAL-W2 Folsom model run directory
+                              containing AutoRunTempLog.opt
+
+    Output:
+      Returns an integer representing the last valid ATSP schedule number used during
+      the compliance season, or None if no qualifying row is found.
+    """
     
     nSchedule = None
     
@@ -421,19 +484,26 @@ def nSchedule_from_AutoRunTempLog(model_run_dir_Folsom):
 
 
 def nSchedule_from_TEMP_LOG(model_run_dir_Folsom):
-    '''
-    Deprecated.
+    """
+    Reads the CE-QUAL-W2 TEMP_LOG.OPT file and returns the last ATSP schedule
+    number loaded during the compliance season (May 1 to Nov 30).
 
-    Historically parsed TEMP_LOG.OPT to determine the last
-    schedule loaded during the compliance period.
+    DEPRECATED: This function is retained for reference only. TEMP_LOG.OPT is
+    not always reliable for this purpose. Use nSchedule_from_AutoRunTempLog instead.
 
-    According to project guidance, TEMP_LOG.OPT is not always
-    reliable for this purpose. AutoRunTempLog.opt should be used
-    instead.
+    The function scans all lines beginning with 'OPEN FILE:TargetSchedulesA.npt'
+    and extracts the schedule number and day-of-year from the whitespace-delimited
+    tokens. Only rows with a load day-of-year below 333 are considered, to avoid
+    the post-season schedule reload.
 
-    Returns:
-        Last valid schedule number loaded prior to Dec 1.
-    '''
+    Inputs:
+      model_run_dir_Folsom -- full path to the CE-QUAL-W2 Folsom model run directory
+                              containing TEMP_LOG.OPT
+
+    Output:
+      Returns an integer representing the last valid ATSP schedule number found
+      before Julian day 333, or None if no qualifying line is found.
+    """
     
     nSchedule = None
     with open(os.path.join(model_run_dir_Folsom,'TEMP_LOG.OPT'),'r') as fp:
@@ -458,34 +528,50 @@ def nSchedule_from_TEMP_LOG(model_run_dir_Folsom):
 
 
 def computeAlternative(currentAlternative, computeOptions):
-    ###############################################################################
-    # Main HEC-WAT Scripting Alternative Entry Point
-    #
-    # Workflow Overview
-    # -----------------
-    #
-    # 1. Discover input DSS locations.
-    # 2. Determine simulation and alternative names.
-    # 3. Locate the corresponding CE-QUAL-W2 model run directory.
-    # 4. Aggregate outlet flows.
-    # 5. Compute flow-weighted outlet temperatures.
-    # 6. Determine final ATSP schedule used during forecast execution.
-    # 7. Export schedule temperatures and schedule number.
-    # 8. Calculate downstream regression temperatures.
-    # 9. Export shutter elevation diagnostics.
-    # 10. Export storage diagnostics.
-    #
-    # DSS records are written twice in many cases:
-    #
-    #   A. Scripting Alternative F-part
-    #   B. Original W2 F-part
-    #
-    # This duplication exists because several legacy plotting tools expect data
-    # under the W2 F-part and cannot locate records written solely by scripting
-    # alternatives.
-    #
-    ###############################################################################
-    
+    """
+    Entry point for the WAT scripting alternative compute for the CE-QUAL-W2
+    Folsom Lake post-processing workflow.
+
+    Orchestrates ten sequential operations:
+      1. Discovers and organizes W2 outlet flow/temperature input DSS locations.
+      2. Determines the simulation year, alternative name, and W2 model variant
+         (base iterative, FixedATSP, or NoBypass) from the simulation name.
+      3. Locates the CE-QUAL-W2 Folsom model run directory and output files.
+      4. Sums all Folsom outlet flows to produce the Natoma inflow record.
+      5. Computes the flow-weighted average Folsom release temperature (FWA2).
+      6. Reads the final ATSP schedule number from AutoRunTempLog.opt.
+      7. Exports the schedule target temperatures (converted to Celsius if needed)
+         and schedule number to the forecast DSS file.
+      8. Computes downstream regression temperatures at Watt Avenue and Hazel
+         Avenue using calc_downstream_temp_W2.
+      9. Writes shutter elevation diagnostics from the W2 structure output file.
+     10. Writes reservoir storage diagnostics from the W2 volume output file.
+
+    All DSS records are written twice: once under the scripting alternative F-part
+    and once under the original W2 F-part, for compatibility with legacy plotting
+    tools that cannot locate scripting-alternative records.
+
+    Inputs:
+      currentAlternative -- WAT scripting alternative object providing input/output
+                            data locations, compute messages, and DSS path creation
+      computeOptions     -- WAT compute options object providing the DSS filename,
+                            run time window, run directory, and simulation name
+
+    Output:
+      Returns True on successful completion.
+      Writes the following DSS records to the forecast DSS file (under both
+      scripting and W2 F-parts):
+        - W2_Natoma_InflowQ              (summed Folsom outlet flows)
+        - W2_Natoma_InflowT              (flow-weighted release temperature)
+        - W2_FOLSOM_SCHEDULE_TEMP_FINAL  (ATSP schedule target temperatures)
+        - W2_FOLSOM_SCHEDULE_FINAL       (ATSP schedule number, constant 24-step series)
+        - W2_DownstreamRegressionWatt    (Watt Avenue regression temperature)
+        - W2_DownstreamRegressionHazel   (Hazel Avenue regression temperature)
+        - W2_Folsom_Forecast_Shutter_1/2/3 (penstock intake elevations, ft)
+        - W2_Folsom_Forecast_BypassFlow  (total bypass flow, CMS)
+        - W2_Folsom_Forecast_RevisedPenstock1Flow (Penstock 1 flow, CMS)
+        - W2_Folsom_Storage / _lt_52F / _lt_60F   (storage volumes, acre-ft)
+    """
     
     # Log the start of script execution in the HEC-WAT compute messages.
     currentAlternative.addComputeMessage("Computing ScriptingAlternative:" + currentAlternative.getName() )

@@ -58,6 +58,61 @@ ResSimFolsomInputs = [
 
 
 def computeAlternative(currentAlternative, computeOptions):
+    """
+    Entry point for the WAT scripting alternative compute for the HEC-ResSim Folsom
+    release temperature post-processing workflow.
+
+    Orchestrates five sequential operations using ResSim Folsom penstock flow and
+    temperature input DSS locations:
+
+      1. Flow-weighted Penstock 1-3 release temperature (hourly, FWA)
+         Computes a combined hourly release temperature for penstocks 1-3 using
+         flow-weighted averaging. Flows below 50 CFS are excluded.
+
+      2. Daily flow-weighted Penstock 1-3 release temperature (FWA2_Daily)
+         Creates a daily version of the penstock release temperature for use by
+         downstream temperature forecasting workflows. A 1-day + 1-hour delay
+         is applied to skip garbage values at the start of the record.
+
+      3. Daily full-dam release temperature (FWA2_Daily)
+         Computes a daily flow-weighted average temperature using the combined
+         Folsom release record rather than individual penstocks. A 1-day + 1-hour
+         delay is applied because the source record contains unusable values until
+         approximately 01:00 on Day 2.
+
+      4. Target temperature record under ResSim F-part
+         Reads the standard American River forecast target temperature record
+         (AMER_BC_SCRIPT F-part), converts Fahrenheit to Celsius if needed, and
+         writes a duplicate copy under the ResSim F-part for compatibility with
+         plotting tools that locate records by F-part.
+
+      5. Penstock flow-minus-leakage diagnostic records (buzz plots)
+         For each of penstocks 1-3, subtracts the leakage flow (Penstock 1 only;
+         zero record used for penstocks 2 and 3) from the penstock flow to produce
+         adjusted flow records used by operational buzz plots. A 1-day + 1-hour
+         delay is applied for timing alignment.
+
+    All output DSS records are written under the ResSim F-part (extracted from the
+    first input location) so they appear alongside native ResSim outputs in DSS
+    plotting and reporting tools.
+
+    Inputs:
+      currentAlternative -- WAT scripting alternative object providing input/output
+                            data locations, compute messages, and DSS path creation
+      computeOptions     -- WAT compute options object providing the DSS filename,
+                            run time window, and run directory
+
+    Output:
+      Returns True on successful completion.
+      Writes the following DSS records to the forecast DSS file (all under the
+      ResSim F-part):
+        - Folsom Penstock 1-3 flow-weighted temperature      (hourly, CFS-weighted)
+        - Folsom Penstock 1-3 flow-weighted temperature      (1-day average)
+        - Folsom full-dam flow-weighted temperature          (1-day average)
+        - Folsom Downstream TEMP-WATER-TARGET                (1-hour, duplicate under ResSim F-part)
+        - Folsom Lake-Penstock 1/2/3 minus leakage flow      (1-hour, per-penstock diagnostic)
+    """
+    
     
     #######################################################################
     # Script initialization
