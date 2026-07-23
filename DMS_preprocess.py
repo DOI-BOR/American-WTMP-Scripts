@@ -179,7 +179,7 @@ def fix_DMS_types_units(dss_file):
                     # Write updated record back to DSS
                     dss.write(tsc)
                     
-                # Convert fractional cloud values (fract -> FRAC + tenths copy)
+                # Convert fractional cloud values (fract to FRAC + tenths copy)
                 if units == 'fract':
                     # save off a copy of cloud record in 0-1 for ResSim, with proper naming, reset orignial to tenths
                     original_fullName = tsc.fullName
@@ -828,7 +828,7 @@ def calc_folsom_inflow_temps(currentAlt, rtw, hydro_dss, met_dss_file, output_ds
         output_period = '1Day'
 
     # hardcoded paths ... yuck
-    # Override paths with shared American_inflows_6 DSS --ensures consistent sources
+    # Override paths with shared American_inflows_6 DSS ensures consistent sources
     shared_path,_ = os.path.split(hydro_dss)
     American_inflows_6 = os.path.join(shared_path,'American_inflows_6.dss')
     NF = '::'.join([American_inflows_6,'/11427000/NF AMERICAN/FLOW//1HOUR/USGS-CARDNO-FROM-DAILY/'])
@@ -995,7 +995,7 @@ def compute_folsom_flows(currentAlternative, rtw, hydro_dss, output_dss_file):
     # EID outflow - do we need to normalize to daily?
     # /MR Am.-Folsom Lake-EID Folsom Diversion-Diversion Flow/Flow/ --?
 
-    # Sum upper-elevation river outlet releases (G1- G4), then enforce minimum
+    # Sum upper-elevation river outlet releases (G1 to G4), then enforce minimum
     out_rec = '/MR Am.-Folsom Lake/Upper_River_Outlets_Sum_min4/Flow//1Hour/ResSim_PreProcess/'
     outflow_records = ['/MR Am.-Folsom Lake/FOL-Outlet Release G1/Flow//1Hour/250.3.125.23.1/',
                        '/MR Am.-Folsom Lake/FOL-Outlet Release G2/Flow//1Hour/250.3.125.24.1/',
@@ -1004,7 +1004,7 @@ def compute_folsom_flows(currentAlternative, rtw, hydro_dss, output_dss_file):
     DSS_Tools.add_flows(currentAlternative, rtw, outflow_records, hydro_dss, out_rec, output_dss_file)
     DSS_Tools.min_ts(output_dss_file, out_rec, 4.0, output_dss_file, 'ResSim_PreProcess')
 
-    # Sum lower-elevation river outlet releases (G5 - G8), then enforce minimum
+    # Sum lower-elevation river outlet releases (G5 to G8), then enforce minimum
     out_rec = '/MR Am.-Folsom Lake/Lower_River_Outlets_Sum_min4/Flow//1Hour/ResSim_PreProcess/'
     outflow_records = ['/MR Am.-Folsom Lake/FOL-Outlet Release G5/Flow//1Hour/250.3.125.27.1/',
                        '/MR Am.-Folsom Lake/FOL-Outlet Release G6/Flow//1Hour/250.3.125.28.1/',

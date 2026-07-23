@@ -184,15 +184,15 @@ def read_storage_csv(csv_file_path):
     [3] storage below 60 degF.
 
     Inputs:
-      csv_file_path -- full path to the W2 volume output file (VOLUME_WB1.OPT)
+      csv_file_path - full path to the W2 volume output file (VOLUME_WB1.OPT)
 
     Output:
       Returns a tuple (jday, storage, storage_lt_52, storage_lt_60) where each
       element is a list of floats with one entry per output time step (acre-ft):
-        jday         -- Julian day of each output row
-        storage      -- total reservoir storage (acre-ft)
-        storage_lt_52-- storage volume below 52 degF (acre-ft)
-        storage_lt_60-- storage volume below 60 degF (acre-ft)
+        jday          - Julian day of each output row
+        storage       - total reservoir storage (acre-ft)
+        storage_lt_52 - storage volume below 52 degF (acre-ft)
+        storage_lt_60 - storage volume below 60 degF (acre-ft)
     """
     
     # factor to convert to ac-ft 
@@ -217,36 +217,25 @@ def read_storage_csv(csv_file_path):
     
 
 def write_shutter_elevations_to_output_dss(str_csv,vol_csv,dss_file,output_tsc):
-    """
-    Reads CE-QUAL-W2 structure and storage output files, aligns the data to the
-    DSS output time grid, and writes diagnostic results to the forecast DSS file.
+    '''
+    Reads W2 shutter elevation and storage output files and writes
+    processed results to DSS.
 
-    Because W2 shutter elevation and storage outputs may be written at a different
-    time interval than the primary DSS records, this function uses merge_data_nearest_jday
-    to map each W2 output value onto the nearest DSS time step.
+    Because shutter elevation output is typically written at a different
+    time interval than other W2 model outputs, this routine merges the
+    shutter data onto the DSS output time grid before writing.
 
-    The output_tsc argument serves as a template container providing the DSS time
-    axis, E-part, and W2 F-part for all output records.
+    Outputs include:
+      - Shutter elevations (Penstocks 1-3) (ELEV, ft)
+      - Bypass flow (FLOW, CMS)
+      - Revised Penstock 1 flow (FLOW, CMS)
+      - Reservoir storage (STOR, acre-ft)
+      - Storage below 52F (STOR, acre-ft)
+      - Storage below 60F (STOR, acre-ft)
 
-    Inputs:
-      str_csv    -- full path to the W2 structure output file (str_br1.csv)
-      vol_csv    -- full path to the W2 volume output file (VOLUME_WB1.OPT)
-      dss_file   -- full path to the DSS file for writing output records
-      output_tsc -- HEC TimeSeriesContainer object; provides the DSS time axis,
-                    E-part (interval), and W2 F-part for naming output records
-
-    Output:
-      No return value. Writes the following DSS records to dss_file (all merged
-      to the output_tsc time grid):
-        - W2_Folsom_Forecast_Shutter_1  (ELEV, ft)
-        - W2_Folsom_Forecast_Shutter_2  (ELEV, ft)
-        - W2_Folsom_Forecast_Shutter_3  (ELEV, ft)
-        - W2_Folsom_Forecast_BypassFlow         (FLOW, CMS)
-        - W2_Folsom_Forecast_RevisedPenstock1Flow (FLOW, CMS)
-        - W2_Folsom_Storage      (STOR, acre-ft)
-        - W2_Folsom_Storage_lt_52F (STOR, acre-ft)
-        - W2_Folsom_Storage_lt_60F (STOR, acre-ft)
-    """
+    output_tsc is used as a template container for DSS writes and
+    provides the appropriate W2 forecast F-part.
+    '''
 
     # Read structure output file
     jday,sElev1,sElev2,sElev3,bypassFlow,revisedPenstock1Flow = read_str_csv(str_csv)
@@ -459,8 +448,8 @@ def write_constant_1day_ts(dssFm,rec,rtw,constant_value):
 
 def nSchedule_from_AutoRunTempLog(model_run_dir_Folsom):
     """
-    Reads the CE-QUAL-W2 AutoRunTempLog.opt file and returns the last valid ATSP
-    temperature schedule number used during the compliance season (May 1 to Nov 30).
+    Reads AutoRunTempLog.opt and returns the last valid ATSP
+    schedule used during the compliance season (May 1 to Nov 30).
 
     The AutoRunTempLog.opt file records the schedule loaded at each time step during
     iterative W2 simulations. The function scans all rows and returns the schedule

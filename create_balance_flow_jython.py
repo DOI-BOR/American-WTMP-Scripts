@@ -924,7 +924,7 @@ def create_balance_flows(currentAlt, timewindow, res_name, inflow_records, outfl
                           linear_interpolation(elev_stor_area['elev'], elev_stor_area['area'], stage_end))
         
         # Convert evaporation depth to volumetric flow loss.
-        evap_flow_loss = (evap[k] * area_avg) * acreft_2_cfs  
+        evap_flow_loss = (evap[k] * area_avg) * acreft_2_cfs  # in cfs
 
         ################################################################ 
         # Mass balance residual 

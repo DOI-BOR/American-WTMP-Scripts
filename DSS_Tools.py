@@ -1,7 +1,3 @@
-#version 2.0
-#modified 03-28-2023 by Scott Burdick-Yahya
-#modifed Dec 2023 by Ben Saenz
-
 from hec.heclib.dss import HecDss
 from hec.io import DSSIdentifier
 from hec.io import TimeSeriesContainer
@@ -208,22 +204,6 @@ def organizeLocations(curAlt, location_objs, loc_names, return_dss_paths=False):
             
     # Return ordered list of location objects or DSS paths        
     return locations_list
-
-# I tihnk this version is old ... keeping around in case behavior is broken
-#
-#def organizeLocations(curAlt, location_objs, loc_names, return_dss_paths=False):
-#    locations_list = []
-#    print('num_locs:',len(location_objs))
-#    for name in loc_names:
-#        i_loc = findLocationOrder(curAlt,location_objs,name)
-#        if return_dss_paths:
-#            tspath = str(curAlt.loadTimeSeries(location_objs[i_loc]))
-#            tspath = fixInputLocationFpart(curAlt, tspath)
-#            locations_list.append(tspath)
-#        else:
-#            locations_list.append(location_objs[i_loc])
-#    return locations_list
-
 
 def organizeLocationsPaired(curAlt, location_objs, loc_names_paired, return_dss_paths=False):   
     """
@@ -1773,7 +1753,7 @@ def replace_data(currentAlt, timewindow, pairs, dss_file, dss_outfile, months, s
         
         if base_interval != alt_interval:
             
-            # Mismatched intervals cannot be safely merged - abort
+            # Mismatched intervals cannot be safely merged abort
             currentAlt.addComputeMessage('Intervals do not match for {0} and {1}, changing interval...'.format(pair[0], pair[1]))
             dssFm.close()
             sys.exit(1)

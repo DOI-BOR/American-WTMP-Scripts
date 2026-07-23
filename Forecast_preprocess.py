@@ -108,7 +108,7 @@ def interp(x, xp, fp, left=None, right=None):
         # linear interpolation between points         
         else:
             
-            # Search segment where xp[i] < x < xp[i+1]
+            # Search segment where xp[i] <= x <= xp[i+1]
             for i in range(len(xp) - 1):
                 if x >= xp[i] and x <= xp[i+1]:
                     # Perform the linear interpolation
